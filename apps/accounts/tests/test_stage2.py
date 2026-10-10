@@ -328,7 +328,7 @@ class StageTwoTests(TestCase):
         for url in ['/accounts/login/','/accounts/recovery/','/accounts/activate/?token='+token]:
             response=self.client.get(url)
             self.assertEqual(response['Cache-Control'],'no-store')
-            self.assertEqual(response['Referrer-Policy'],'no-referrer')
+            self.assertEqual(response['Referrer-Policy'],'strict-origin')
         self.assertEqual(Client(enforce_csrf_checks=True).post('/accounts/activate/',{'token':token,'password':PASSWORD,'password_confirm':PASSWORD}).status_code,403)
         self.assertIsNone(Invitation.objects.get(user=user).used_at)
 

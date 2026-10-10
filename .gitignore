@@ -12,3 +12,4 @@ test-results/
 backups/
 *.dump
 *.log
+.venv-browser/

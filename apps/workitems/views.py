@@ -9,6 +9,7 @@ from .forms import ConfirmationForm, IssueForm
 from .policies import require_issue
 from .selectors import all_items, issued_items, item_detail, item_roster, recipient_directory
 from .services import IssueConflict, PreviewChanged, issue_item, preview_issue, read_preview
+from .listing import item_list
 
 
 def confirmation_page(request, preview, *, status=200, error=''):
@@ -37,9 +38,17 @@ def issue(request):
 def confirm(request):
     form = ConfirmationForm(request.POST)
     if not form.is_valid():
-        return HttpResponse('Некорректное подтверждение. Вернитесь к форме.', status=400, content_type='text/plain; charset=utf-8')
+        return render(request, 'workitems/conflict.html', {'error': 'Некорректное подтверждение. Вернитесь к форме.'}, status=400)
     try:
         document = read_preview(form.cleaned_data['preview'])
+        if request.POST.get('back') == '1':
+            with actor_transaction(request.user.pk, session_auth_version=request.session.get('auth_version')) as actor:
+                require_issue(actor)
+                if document['actor'] != str(actor.pk) or document['key'] != str(form.cleaned_data['request_key']):
+                    raise ValidationError('Некорректное подтверждение.')
+                payload = document['payload']
+                initial = {**payload, 'due_date': timezone.datetime.fromisoformat(payload['due_at']).astimezone(MOSCOW).date(), 'event_at': timezone.datetime.fromisoformat(payload['event_at']) if payload['event_at'] else None, 'subtasks': '\n'.join(payload['subtasks']), 'request_key': form.cleaned_data['request_key']}
+                return render(request, 'workitems/issue.html', {'form': IssueForm(initial=initial, directory=recipient_directory(actor))})
         item, created = issue_item(actor_id=request.user.pk, auth_version=request.session.get('auth_version'), request_key=form.cleaned_data['request_key'], payload=document['payload'], preview_token=form.cleaned_data['preview'])
     except PreviewChanged as exc:
         return confirmation_page(request, exc.preview, status=409, error=exc.messages[0])
@@ -53,12 +62,14 @@ def confirm(request):
 
 @require_GET
 def issued(request):
-    return render(request, 'workitems/list.html', {'heading': 'Выданные', 'items': issued_items(request.user)})
+    context = item_list(request.user, request.GET, 'issued')
+    return render(request, 'workitems/list.html', {'heading': 'Выданные', **context}, status=context['status'])
 
 
 @require_GET
 def all_workitems(request):
-    return render(request, 'workitems/list.html', {'heading': 'Все задания', 'items': all_items(request.user)})
+    context = item_list(request.user, request.GET, 'all')
+    return render(request, 'workitems/list.html', {'heading': 'Все задания', **context}, status=context['status'])
 
 
 @require_GET
@@ -192,7 +203,7 @@ def add_assignees(request, item_id):
 def workflow_confirm(request, item_id):
     form = WorkflowConfirmationForm(request.POST)
     if not form.is_valid():
-        return HttpResponse('Некорректное подтверждение.', status=400)
+        return render(request, 'workitems/conflict.html', {'error': 'Некорректное подтверждение.'}, status=400)
     token = form.cleaned_data['token']
     document = None
     try:
@@ -206,6 +217,14 @@ def workflow_confirm(request, item_id):
             operation = document.get('operation')
             if operation not in ('edit', 'add'):
                 raise ValidationError('Неизвестная операция.')
+            if request.POST.get('back') == '1':
+                item = workflow.managed_item(actor, item_id, operation)
+                if document.get('actor') != str(actor.pk) or document.get('item') != str(item.pk):
+                    raise ValidationError('Некорректное подтверждение.')
+                if operation == 'edit':
+                    initial, rows = edit_initial(item, document['payload'])
+                    return render(request, 'workitems/edit.html', {'item': item, 'form': EditContentForm(kind=item.kind, initial=initial), 'formset': SubtaskEditFormSet(initial=rows, prefix='subtasks')})
+                return render(request, 'workitems/add.html', {'item': item, 'form': AddAssigneesForm(directory=recipient_directory(actor, item), initial={**document['payload'], 'version': item.version})})
         service = workflow.apply_edit if operation == 'edit' else workflow.apply_additions
         item = service(actor_id=request.user.pk, auth_version=request.session.get('auth_version'), item_id=item_id, token=token)
     except workflow.ConsequencesChanged as exc:
@@ -270,4 +289,5 @@ def history(request, item_id):
 
 @require_GET
 def archives(request):
-    return render(request, 'workitems/list.html', {'heading': 'Архив', 'items': archived_items(request.user)})
+    context = item_list(request.user, request.GET, 'archive')
+    return render(request, 'workitems/list.html', {'heading': 'Архив', **context}, status=context['status'])

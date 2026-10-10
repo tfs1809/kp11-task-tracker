@@ -1,0 +1,1 @@
+<form method="get" class="filters" aria-label="Фильтры заданий">{% if tab %}<input type="hidden" name="tab" value="{{ tab }}">{% endif %}{% include 'shared/form.html' with form=filters %}<div class="actions"><button type="submit">Применить</button><a href="{{ request.path }}{% if tab %}?tab={{ tab }}{% endif %}">Сбросить фильтры</a></div></form>

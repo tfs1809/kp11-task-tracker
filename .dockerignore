@@ -1,6 +1,7 @@
 .git
 .env*
 .venv
+.venv-browser
 .cache
 __pycache__
 **/__pycache__

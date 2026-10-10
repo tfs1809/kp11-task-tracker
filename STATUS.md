@@ -1,8 +1,68 @@
 # Состояние проекта
 
-Обновлено: 10 октября 2026, 19:29 UTC (22:29 Москва).
+Обновлено: 11.10.2026 01:11 Москва.
 
-Проектирование и этапы 1–3 приняты пользователем. Коммиты: этап 1 **34b12bb**, этап 2 **f34e6b1**, принятый этап 3 **d3854b7** (`Implement task and event issuance with recipient snapshots`), без push. По последней команде пользователя **этап 4 реализован полностью**; изменения оставлены в рабочем дереве для приемки. Этапы 5–7 не начинались. SPEC.md, принятая PERMISSIONS.md, зависимости и digest базовых образов не изменены.
+Проектирование и этапы 1–4 приняты пользователем. Коммиты: **34b12bb**, **f34e6b1**, **d3854b7**, принятый этап 4 **ba89479** (`Implement personal progress, task revision and assignment lifecycle`), без push. **Этап 5 реализован полностью**, изменения оставлены в рабочем дереве для приемки. Этапы 6–7 не начинались. SPEC.md, принятая PERMISSIONS.md, схема/миграции, runtime-зависимости и digest базовых образов не изменены. Browser tooling имеет отдельный lock; .dockerignore исключает его venv из web-образа.
+
+## Реализовано в этапе 5
+
+- Русские «Мои задачи» с вкладками «Назначены» / «Выполнены», счетчиками, автором/видом и сортировкой срока в обе стороны. По умолчанию ближайшие сверху. Переключение вкладок сохраняет фильтры; сброс фильтров сохраняет вкладку. Завершение/возврат меняет категорию назначения, сохраняет предусмотренные отметки/историю.
+- Серверные фильтры поверх ограниченных selectors: варианты автора только из доступных объектов, чужие данные/прогресс не появляются в списках. Неизвестное значение дает 400 с пустым результатом, не отменяет ограничения. Детерминированный due_at + UUID, страницы по 20 объектов, параметры сохраняются между страницами.
+- «Выданные», отдельные «Все задания» по праву и доступный архив с фильтрами; архивные исключены из текущих списков. Карточки показывают вид, автора, личную дату назначения, срок/событие, отметки/выполнение и текстовую просрочку. Статистика, roster «Все исполнители»/«Не выполнили», readonly progress и история доступны только по текущим основаниям чтения.
+- Навигация/действия по текущим правам, административные разделы и forms сотрудников/ролей/групп. Крупные controls, labels/legend, помощь, сообщения ошибок и сохранение полей/checkbox choices. Сервер повторно проверяет права независимо от видимости кнопок.
+- Светлая адаптивная верстка: карточки на телефоне, две колонки на ПК, перенос длинных ФИО/текстов, текстовые состояния вместе с цветом. Видимый keyboard focus, skip-link и доступные checkbox semantics личных отметок. Небольшой JS добавляет строки checklist с уникальными ids/labels и фокусом; server validation остается обязательной.
+- Превью и возврат к заполненной форме работают без JS, с проверкой подписи/actor/item/текущих прав. Все формы имеют явный правильный action, включая повтор после конфликта/возврата. Без JS работают выдача, отметки, completion/return и редактирование с подтверждением.
+- Исправлен реальный браузерный отказ CSRF локальных HTTP-форм: **Referrer-Policy: strict-origin** вместо no-referrer. Origin остается правильным, Referer содержит только origin без пути/query/секретного токена; CSRF/проверка Origin не отключены.
+
+## Реально выполненные проверки этапа 5
+
+Linux amd64; Docker 28.4.0/Compose 2.40.3; runtime Python 3.12.15, Django 5.2.18, psycopg 3.3.6; PostgreSQL 17.11, Mailpit 1.31.4. Все DB/конкурентные проверки на PostgreSQL, без SQLite. Финальный функциональный web image **sha256:35dfb0d59a18c770d764c3f89ce93a41a328a04083d9480df2e5ef26277a4fc7**. После этой сборки изменялась только документация.
+
+| Команда / проверка | Реальный результат |
+| --- | --- |
+| Cloud build с BUILDX_CONFIG и compose.cloud.yaml | Exit 0; закрепленные runtime зависимости, TLS и lock hashes сохранены |
+| `docker compose run --rm migrate`, `docker compose up -d --wait web` | Exit 0; No migrations to apply, grants успешны, основная db/web/Mailpit healthy |
+| Startup пустых изолированных PostgreSQL projects | Все миграции с нуля, grants и readiness успешны; browser/mail links используют matching PUBLIC_BASE_URL |
+| `docker compose run --rm tests` на финальном коде | **134 tests, 134 passed, 0 failed, 0 skipped**, **107.858 секунды**, exit 0. Fresh test_kp11 создана миграциями и удалена после suite |
+| `.venv-browser/bin/python scripts/browser_stage5.py --project kp11-stage5-browser-run6-20261011 --web-port 18170 --mailpit-port 18195` | **8 tests, 8 passed, 0 failures/errors/skipped**, **39.248 секунды**, exit 0. Chromium **151.0.7922.173**, Playwright **1.62.0**, реальные страницы на **360/1280 px**; 4 активации через SMTP, изолированные cookies, реальные CSRF/Origin/Referer |
+| Проверка текущего browser JSON | run_id **f2028766-a910-422d-b17e-c3ab199594fc** совпал с runner; **46 успешных DOM/layout/contrast audits**, 340 проверенных экземпляров controls и 956 замеров текстового контраста. На проверенных страницах scrollWidth == innerWidth; duplicate ids/missing labels/contrast failures отсутствуют. Четыре запроса активации: правильный Origin и Referer без пути/query |
+| Keyboard / без JavaScript | На обеих ширинах Tab/Enter/Space: skip-link, переход к задаче, выполнение/возврат и отметка; видимый focus 3px проверен. Два отдельные no-JS сценария проходят выдачу/возврат из preview, отметки/выполнение/возврат и edit/reset; дополнительная JS-кнопка скрыта |
+| Browser screenshots | 10 текущих screenshots синтетических рабочих страниц в игнорируемом test-results/stage5. Просмотрены 360-home и 1280-issued; это просмотр артефактов, не ручной проход приложением человеком |
+| `scripts/smoke_accounts.py` на kp11-stage2-smoke-stage5-regression, 18160/18185 | Exit 0: прежний HTTP/SMTP сценарий этапа 2 прошел после изменения form rendering/referrer policy, включая безопасные web logs |
+| `scripts/smoke_workflow.py` на kp11-stage4-smoke-stage5-regression, 18130/18155 | Exit 0: независимые marks/completion/return, reorder/reset/reconfirm, revoke/restore, версии, deactivation/reactivation, статистика/история и readonly archive. Проверка видимых текстов адаптирована к новым span, условия не ослаблены |
+| `docker compose exec -T web python manage.py check --database default` | Exit 0, no issues (0 silenced) |
+| `docker compose run --rm migrate python manage.py makemigrations --check --dry-run` | Exit 0, No changes detected; models/миграции не менялись |
+| Runtime и browser venv `python -m pip check` | Exit 0, No broken requirements found. Отдельные browser wheels скачаны с PyPI, установлены с --require-hashes и trusted system CA; runtime lock не менялся |
+| `python3 scripts/smoke.py` | Exit 0: redirect/login, русский HTML/CSS, no-store, закрытый health/DB readiness и новое SMTP-письмо именно текущего запуска |
+| `docker compose exec -T web python scripts/check_production.py` | Exit 0 **с одним security.W021** (HSTS preload выключен); только settings с примерами hosts/SMTP, внешние HTTPS/SMTP не проверялись |
+| `docker compose exec -T web python manage.py collectstatic --noinput` | Exit 0, CSS и JS собраны runtime-пользователем |
+| Compose config --quiet, Python compileall, 22 локальные Markdown-ссылки, git diff --check | Exit 0; SPEC/PERMISSIONS, runtime lock/base image pins и models/миграции не изменены |
+| Основная development-БД и environment_probe stage1-persist | Exit 0, **0 пользователей, 0 WorkItem**, прежний маркер сохранен; bootstrap/синтетические сотрудники только в test_kp11 или изолированных projects |
+
+134 теста = прежние 125 + 9 новых interface tests. Новые: scoped filters/author directory, default/reverse order, completed/return и сохранение фильтров, invalid query 400 без выдачи полного списка, revoked/archive исключения, pagination, own/all/nav ACL, back-preview сохранение ввода/action/actor без мутации, снятие роли при открытой сессии. Прежние PostgreSQL constraints/migrations/concurrency проверки входят в итоговый suite.
+
+8 browser tests = по четыре больших сценария на каждой ширине: full workflow/privacy/reset/stale form/revoke/restore/archive; tabs/filters/sort/navigation; keyboard/forms/errors/long text/accessibility/JS-row; no-JS workflow. Сами письма/активации выполняются в подготовке и не выданы за дополнительные unittest cases. DOM audit проверяет подписи видимых controls/checkbox groups, уникальность ids и горизонтальную ширину, контраст текстов (4.5:1 обычный, 3:1 крупный); это не сертификация доступности или проверка screen reader.
+
+## Неуспешные запуски и исправления этапа 5
+
+- До финальных изменений были два успешных промежуточных server suite: **134/134**, 91.278 и 95.130 секунды. Они не заменяют финальный 107.858-секундный запуск после исправления повторной отправки форм.
+- Первые browser-подготовки остановились до unittest cases: selector не учитывал colon/whitespace стандартных Django labels; затем реальная активация получила CSRF 403. Диагностика показала совпадение cookie/form CSRF и **Origin:null** при no-referrer. strict-origin исправил отказ, не отключая CSRF. Следующие подготовительные ошибки — неоднозначный text selector «Пароль сохранен» и whitespace checkbox labels; fixtures исправлены на точные семантические selectors. Эти прогоны не засчитаны успешными.
+- Первый полный browser suite: **8 tests, 8 errors, 0 skipped**, 134.188 секунды, run_id b7baf508-654a-43ea-add2-992b5d8460eb. После back form отправлялся на confirmation URL, а не на new/edit/add; исправлены явные action и добавлены server assertions. Также исправлен неверно переписанный helper self.label; keyboard case получил собственный fixture вместо зависимости от предыдущего case. Повтор: 8/8 passed, assertions сохранены.
+- Публичные docs.djangoproject.com/playwright.dev оказались закрыты сетевым proxy (403). Официальные Django 5.2 forms docs и Playwright browser API прочитаны из официальных GitHub repositories по разрешенному HTTPS; verification/allowlist не ослаблялись.
+
+## Конфигурация среды и ограничения
+
+Через cloud-environment-onboarding:setup сохранены **install_script** (app build + отдельный browser venv с lock/hash/trusted CA/pip check) и **start_skill** (принятый этап 4, интерфейс/проверки этапа 5, изолированные browser projects, текущий run_id/exit/counts, сохранение .env/volumes). Ответ сервиса: **status=saved, requires_publish=true**. Repositories, network allowlist и secret bindings не менялись. Для будущих задач сохраните изменения в настройках среды и опубликуйте среду; публикация и fresh-task restoration **не выполнены**. Наличие системного Chromium в новой задаче нельзя считать подтвержденным текущим запуском.
+
+- Этапы 6–7 не реализованы: чат и release/backup/restore/production operations.
+- Ручной сценарий человеком, screen reader/assistive technology, другие браузеры/OS/CPU, внешние HTTPS/SMTP/proxy, dump/restore и нагрузка **не проверены**. Автоматический Chromium на 360/1280 px действительно выполнен, но не заменяет production-приемку. W021 не скрыт.
+- Обычная сборка без cloud overlay за пределами этой среды не проверена. Основные db/web/Mailpit healthy; все изолированные browser/HTTP smoke projects остановлены без удаления volumes. Основная БД не удалялась, .env не перезаписывался, тестовыми сотрудниками она не заполнялась.
+
+Точные команды запуска/проверок, bootstrap, отдельного Chromium suite и короткий ручной сценарий — [README.md](README.md). Production-параметры — [DECISIONS.md](DECISIONS.md).
+
+## История этапа 4 (коммит ba89479)
+
+Ниже сохранены результаты этапа 4 до реализации этапа 5; отсутствие полного UI/browser acceptance и будущий этап 5 относятся к историческому состоянию.
 
 ## Реализовано в этапе 4
 

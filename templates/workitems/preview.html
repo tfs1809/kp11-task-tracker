@@ -8,6 +8,6 @@
 <h2>Получатели: {{ preview.recipients|length }}</h2>
 <ul>{% for recipient in preview.recipients %}<li>{{ recipient.name }}</li>{% endfor %}</ul>
 <p>Подтверждение действительно 10 минут. Если состав или названия изменятся, потребуется новое подтверждение.</p>
-<form method="post" action="{% url 'workitem_confirm' %}">{% csrf_token %}{{ form.as_p }}<button type="submit">Подтвердить и выдать</button></form>
-<button type="button" onclick="history.back()">Вернуться к форме</button>
+<form method="post" action="{% url 'workitem_confirm' %}">{% csrf_token %}{% include 'shared/form.html' %}<button type="submit">Подтвердить и выдать</button> <button type="submit" class="secondary" name="back" value="1">Вернуться к форме</button></form>
+
 </section>{% endblock %}

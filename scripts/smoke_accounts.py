@@ -51,7 +51,7 @@ def activate(email):
     browser = Browser(web)
     status,body,_,headers = browser.post_form('/accounts/activate/?'+urllib.parse.urlencode({'token':token}),{'password':password,'password_confirm':password})
     assert status == 200 and 'Пароль сохранен' in body
-    assert headers['Referrer-Policy'] == 'no-referrer'
+    assert headers['Referrer-Policy'] == 'strict-origin'
     assert browser.request('/accounts/activate/?'+urllib.parse.urlencode({'token':token}))[0] == 400
     return token
 

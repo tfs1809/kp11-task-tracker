@@ -2,6 +2,7 @@
 import argparse
 from html.parser import HTMLParser
 import json
+from html import unescape
 from pathlib import Path
 import re
 import secrets
@@ -32,6 +33,10 @@ class Forms(HTMLParser):
     def handle_endtag(self, tag):
         if tag == 'form':
             self.current = None
+
+
+def text(body):
+    return unescape(re.sub(r'<[^>]+>', '', body))
 
 
 def form(body, action_contains):
@@ -117,14 +122,14 @@ path = urllib.parse.urlsplit(url).path
 assert submit(first, first.request(path)[1], '/completion/')[0] == 400
 body = first.request(path)[1]
 assert submit(first, body, '/subtasks/')[0] == 200
-assert 'Первый пункт — не отмечено' in second.request(path)[1]
+assert 'Первый пункт — не отмечено' in text(second.request(path)[1])
 finish(first, path)
 assert '50%' in manager.request(path)[1]
 assert 'Выполнено:' in first.request(path)[1]
 assert '/subtasks/' not in first.request(path)[1]
 # Возврат сохраняет чекбоксы и историю, повторное выполнение.
 assert submit(first, first.request(path)[1], '/completion/')[0] == 200
-assert 'Первый пункт — отмечено' in first.request(path)[1]
+assert 'Первый пункт — отмечено' in text(first.request(path)[1])
 finish(first, path)
 # Перестановка не сбрасывает, новая подзадача потребует подтверждения последствий.
 def edit_form():
@@ -146,8 +151,8 @@ status, new_preview, _, _ = submit(manager, old_preview, '/confirm-change/')
 assert status == 409 and 'из них выполнили: 2' in new_preview
 assert submit(manager, new_preview, '/confirm-change/')[0] == 200
 assert 'Выполнено:' not in first.request(path)[1]
-assert 'Новый пункт — не отмечено' in first.request(path)[1]
-assert 'Первый пункт — отмечено' in first.request(path)[1]
+assert 'Новый пункт — не отмечено' in text(first.request(path)[1])
+assert 'Первый пункт — отмечено' in text(first.request(path)[1])
 finish(first, path)
 # Отзыв: доступ 404; восстановление compatible progress явно показано.
 roster = manager.request(path + 'assignees/')[1]

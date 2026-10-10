@@ -42,7 +42,7 @@ class ProtectedAccessMiddleware(MiddlewareMixin):
 
             response = error500(request)
         response["Cache-Control"] = "no-store"
-        response["Referrer-Policy"] = "no-referrer"
+        response["Referrer-Policy"] = "strict-origin"
         return response
 
     def process_exception(self, request, exception):
