@@ -14,9 +14,13 @@ def has_permission(actor, code, obj=None):
 
     if not actor or not actor.is_authenticated or not actor.is_active or not actor.email_verified_at:
         return False
-    # Объектные основания реализуются с WorkItem на этапе 3; здесь только каталог.
     if obj is not None:
-        return False
+        from apps.workitems.models import WorkItem
+        from apps.workitems.policies import can_read, can_read_roster, can_edit, can_manage_assignees
+        if not isinstance(obj, WorkItem):
+            return False
+        checks = {"workitems.read": can_read, "workitems.read_roster": can_read_roster, "workitems.edit": can_edit, "workitems.manage_assignees": can_manage_assignees}
+        return checks[code](actor, obj) if code in checks else False
     grants = RolePermission.objects.filter(role__user_roles__user_id=actor.pk, role__is_active=True, permission_id=code)
     return grants.filter(permission__admin_only=False).exists() or grants.filter(role__is_system_admin=True).exists()
 

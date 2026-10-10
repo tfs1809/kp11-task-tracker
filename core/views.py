@@ -7,13 +7,14 @@ from django.views.decorators.http import require_GET
 
 from apps.access.selectors import own_profile
 from apps.accounts.selectors import own_access
+from apps.workitems.selectors import own_assignments
 
 from .middleware import public_view
 
 
 @require_GET
 def home(request):
-    return render(request, "core/home.html", {"profile": own_profile(request.user), **own_access(request.user)})
+    return render(request, "core/home.html", {"profile": own_profile(request.user), **own_access(request.user), "assignments": own_assignments(request.user)})
 
 
 def health_allowed(request):

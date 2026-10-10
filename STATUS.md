@@ -1,19 +1,62 @@
 # Состояние проекта
 
-Обновлено: 10 октября 2026, UTC.
+Обновлено: 10 октября 2026, 18:50 UTC (21:50 Москва).
 
-## Выполнено
+Проектирование и этапы 1–2 приняты пользователем. Этап 1 — коммит **34b12bb**, принятый этап 2 зафиксирован коммитом **f34e6b1** (`Implement employee access and secure authentication`), без push. По последней команде пользователя **этап 3 реализован полностью**; его изменения оставлены в рабочем дереве для приемки. Этапы 4–7 не начинались. SPEC.md, принятая PERMISSIONS.md, зависимости и digest базовых образов не изменены.
 
-Проектирование и этап 1 приняты пользователем. Принятый этап 1 зафиксирован коммитом **34b12bb** (`Prepare architecture and stage 1 development foundation`). По следующей команде пользователя **этап 2 реализован полностью**; изменения этапа 2 находятся в рабочем дереве для приемки. Этапы 3–7 не начинались. SPEC и принятая PERMISSIONS.md сохранены без изменений.
+## Реализовано в этапе 3
 
-- Role/Permission/RolePermission/UserRole и AudienceGroup/Membership, UUID и уникальные связи, версии редактируемых справочников. Миграции создают четыре начальные роли, три группы и каталог из 12 разрешений. Права действующих ролей объединяются; членство в группе ничего не разрешает и автоматически не назначается по роли.
-- Только системный администратор управляет сотрудниками, ролями/правами и группами через собственные формы/services. Permission-каталог недоступен для runtime DML. PostgreSQL triggers защищают key/system-флаг роли, неизменяемый email, административные разрешения и полный каталог прав системной роли. Универсального Django Admin CRUD нет.
-- Корпоративная почта нормализуется trim/lowercase и допускает только corp.kp11.ru; уникальность включает отключенные аккаунты. Приглашения, повторная отправка, активация своим валидным паролем и одноразовый локальный bootstrap. Срок приглашения 48 часов; хранится только digest подписанного случайного токена. SMTP вызывается после commit, без удержания guard; ошибка доставки сохраняет приглашение и позволяет безопасную повторную отправку.
-- EmailBackend, Django password hashers/validators (минимум 12 символов), login и POST logout, recovery/change password. Reset использует штатный PasswordResetTokenGenerator и отдельный одноразовый grant на час. Recovery дает одинаковые HTTP/текстовые ответы для неизвестного, отключенного и неактивированного адреса, включая ошибку SMTP. Равное время ответа не заявляется.
-- DB sessions и auth_version; отключение отзывает сессии и неиспользованные auth-ссылки. Reset отзывает все старые сессии, смена пароля сохраняет текущую и отзывает остальные. Снятие/отключение роли проверяется на следующих запросах без кеша прав. Реактивация не возвращает старую сессию. Сами строки старых сессий могут храниться до expiry/clearsessions, но доступа уже не дают.
-- PostgreSQL AccessGuard сериализует изменения. Actor/epoch/права перечитываются перед действием и перед показом защищенной POST-формы. Last-admin invariant проверяется после потенциального изменения, с атомарным откатом. Все административные изменения и успешные auth-действия записываются в неизменяемый аудит; пароли/токены/ссылки/cookie не входят в payload.
-- PostgreSQL RateLimitBucket с HMAC ключа: вход 5/5 минут email+IP и 30/5 минут IP; recovery 3/час email и 20/час IP; приглашения 3/час адрес и 60/час администратор. Общие для соединений/workers, атомарное расходование нескольких лимитов, 429/Retry-After. Используется REMOTE_ADDR, произвольный X-Forwarded-For не принимается.
-- Русские forms/страницы, CSRF для изменяющих запросов, no-store и no-referrer, безопасные ошибки без auth traceback/секретов. Фиксированный PUBLIC_BASE_URL для почтовых ссылок; production требует явный разрешенный HTTPS origin. «Мои задачи» доступен любому действующему сотруднику и показывает собственные ФИО/роли/группы и честное пустое состояние.
+- WorkItem (task/event), Assignment, стабильные UUID и упорядоченные Subtask; event_at отдельно от обязательного due_at. Срок по дате — последний микросекундный момент московского дня, в PostgreSQL хранится UTC. Поля lifecycle/версий предусмотрены в схеме, операции этапа 4 пока отсутствуют.
+- AudienceSelection и выбранные пользователи/роли/группы с label_snapshot, AssignmentSource со всеми причинами пересечений. Объединение ИЛИ, одно Assignment на сотрудника, минимум один получатель. Допускаются активные приглашенные до подтверждения почты; неподтвержденный не получает доступ к приложению. Изменения состава/названий после выдачи не пересчитывают назначения и сохраненные источники.
+- Серверная форма выдачи, отдельное подписанное превью с ФИО/количеством, подтверждение. Подпись связана с actor, request_key, каноническими полями и полным снимком, действует 600 секунд. Перед выдачей снимок повторно вычисляется под AccessGuard. Изменение/истечение дает 409 с новой формой подтверждения; недоступный выбранный адресат дает ошибку выбора. JS-ids не считаются доверенными.
+- Одна транзакция для задания, подзадач, назначений, источников, MutationReceipt и аудита. Повтор ключа с тем же payload возвращает прежний объект без изменения даты назначения; с другим payload — 409. Текущие права проверяются перед receipt; снятая роль не обходится повтором. Завершенный receipt не требует повторного вычисления состава или непросроченного старого превью.
+- Только create + view_own + manage_own_assignees разрешают выдачу. Личные назначения доступны любому действующему сотруднику; «Выданные» — свои с view_own, «Все задания» — с view_all. Карточки ищутся через ограниченную выборку. Исполнитель не получает roster; UUID чужой карточки дает 404, запрещенный roster видимого задания — 403. Автор не становится исполнителем автоматически. view_all не дает edit; edit_all не раскрывает новые объекты.
+- PostgreSQL UNIQUE/CHECK и индексы; triggers запрещают смену author/kind и identity назначения, изменение/удаление истории источников/receipt, источник другого задания/batch. Runtime имеет только SELECT/INSERT для истории выдачи. Общая синхронизация с изменением ролей/членства остается AccessGuard; выдача журналируется без рабочих текстов и auth-секретов.
+
+## Реально выполненные проверки этапа 3
+
+Linux amd64; Docker 28.4.0/Compose 2.40.3; Python 3.12.15, Django 5.2.18; PostgreSQL 17.11, Mailpit 1.31.4. Все DB/конкурентные проверки использовали PostgreSQL, не SQLite.
+
+| Команда / проверка | Реальный результат |
+| --- | --- |
+| `BUILDX_CONFIG="$PWD/.cache/buildx" docker compose -f compose.yaml -f compose.cloud.yaml build web` | Exit 0, TLS/lock hashes сохранены; финальный функциональный образ `sha256:9eff1a9985d3eb30c35ca178953776e533ca57883a835057bf410167007b4bad` |
+| `docker compose run --rm migrate`, `docker compose up -d --wait web` | Обе новые миграции применены к существующей БД; повтор migrate: No migrations to apply, grants успешны; web healthy |
+| Startup/migrations на пустой БД `kp11-stage3-smoke-20261010` | Все миграции с нуля и runtime grants успешны, реальный web/SMTP доступны |
+| `docker compose run --rm tests` после исправления | **92 tests, 92 passed, 0 failed, 0 skipped**, 51.284 секунды. Fresh test_kp11 создана миграциями, удалена после suite |
+| `docker compose exec -T web python manage.py check --database default` | Exit 0, no issues (0 silenced) |
+| `docker compose run --rm migrate python manage.py makemigrations --check --dry-run` | Exit 0, No changes detected; host makemigrations сначала предупреждал, что hostname db доступен только в Compose, поэтому итоговая проверка выполнена внутри контейнера |
+| `docker compose exec -T web python -m pip check` | Exit 0, No broken requirements found |
+| `python3 scripts/smoke.py` | Exit 0: реальный redirect/login, HTML/CSS, no-store, private health/DB и новое SMTP-письмо в Mailpit |
+| `python3 scripts/smoke_workitems.py --project kp11-stage3-smoke-20261010 --web-port 18000 --mailpit-port 18025` | Exit 0: четыре активации, три выдачи, OR/dedup и пять причин, повтор/снимок/409, отдельные даты, own/all/roster права, отзыв роли автора и отсутствие использованных auth-секретов в web logs |
+| `scripts/smoke_accounts.py` в пустом `kp11-stage2-smoke-stage3-regression`, порты 18010/18035 | Exit 0. Сценарий этапа 2 повторно прошел после выделения общего HTTP-клиента: bootstrap/activation/login, CSRF/права, отзыв роли/сессий, recovery и безопасные логи |
+| Restart db/web в отдельном stage3 smoke project + повторный smoke.py | Exit 0. После restart сохранены 3 WorkItem, 4 Assignment, 8 AssignmentSource, 3 Receipt и 3 записи workitems.issued; HTTP/readiness/SMTP снова успешны |
+| EXPLAIN личных/выданных/всех выборок на smoke-БД | Выполнен; личные/выданные используют индексы, all — Seq Scan на маленькой выборке. Это не нагрузочная проверка. Проверены runtime privileges: SELECT/INSERT разрешены, UPDATE/DELETE запрещены для всех шести таблиц истории выдачи |
+| `docker compose exec -T web python scripts/check_production.py` | Exit 0 **с одним security.W021** (HSTS preload выключен). Проверены settings с примерными hosts/SMTP; внешние HTTPS/SMTP не проверялись |
+| `docker compose exec -T web python manage.py collectstatic --noinput` | Exit 0; CSS собран runtime-пользователем |
+| Основная development-БД и `environment_probe --marker stage1-persist --check-only` | **0 пользователей, 0 WorkItem**, прежний маркер OK. Все синтетические сотрудники/выдачи только в test_kp11 или отдельных smoke projects |
+| Compose config --quiet, Python compileall, 20 локальных Markdown-ссылок, git diff --check | Exit 0; найденный лишний пустой конец HTTP helper исправлен |
+
+92 теста = 62 прежних и 30 новых. Новые проверки: OR/dedup/все источники, active/invited eligibility, пустая выдача, snapshot после membership, reconfirm при новом члене/ФИО/истечении, подпись/actor/key/content, повтор и другой payload, полный rollback, текущие права при повторе, object selectors/roster/email privacy, CSRF/GET, UTC/Москва, независимое event_at, SQL immutable/unique/check/cross-item source. У task chat-поля запрещены CHECK и chat endpoint отсутствует (404); EventMessage пока не существует, его trigger будет этапом 6.
+
+Пять новых TransactionTestCase с независимыми PostgreSQL соединениями: два одинаковых ключа дают один объект/аудит; разные payload одного ключа — один успех и один конфликт; выдача против изменения membership; выдача против снятия роли автора; два одновременных HTTP POST подтверждения с enforce_csrf_checks=True возвращают одну Location. Оба допустимых порядка конкурентных изменений сохраняют согласованное состояние.
+
+## Найденные ошибки этапа 3
+
+Первый полный прогон: **92 теста, 1 failure**, 49.960 секунды. Старый тест входа обнаружил изменение текста пустого списка («Заданий» вместо «Задач»). Вернут прежний текст, assertion не менялся. Следующий полный прогон: 92/92 passed. Неудачный прогон не помечен успешным. До контейнерной проверки генерация миграции на host сообщала о недоступном Compose hostname; внутри контейнера миграции и проверка отсутствия расхождений прошли.
+
+## Конфигурация среды и ограничения
+
+Через cloud-environment-onboarding обновлен и сохранен черновик **start_skill** для этапа 3: существующий checkout, build/start/migrate/readiness, PostgreSQL tests, изолированные HTTP/SMTP сценарии, сохранение .env/volumes, безопасный bootstrap. install_script, repositories, allowlist и secret bindings не менялись. Для будущих задач проверьте/сохраните настройки среды и опубликуйте их; сохранение черновика само по себе не публикует среду. Публикация и fresh-task restoration **не выполнены**.
+
+- Этапы 4–7 не реализованы: отметки/выполнение/возврат, редактирование/отзыв/восстановление/архив/статистика, полный интерфейс и чат. Деактивация сейчас запрещает чтение/сессии; перевод Assignment в revoked и отсутствие автоматического восстановления при реактивации будут этапом 4.
+- Ручной сценарий человеком, браузер/JS engine и 360/1280 px, внешние HTTPS/SMTP/proxy, backup/restore и нагрузка **не проверены**. Runtime grants и автоматический HTTP smoke не заменяют production-приемку. W021 не скрыт.
+- Обычная сборка без cloud overlay за пределами этой среды и другие CPU/OS не проверены. Основные db/web/Mailpit работают; одноразовые smoke projects остановлены без удаления volumes. Основная БД не удалялась и не заполнялась тестовыми сотрудниками.
+
+Точные команды запуска/проверок, bootstrap и короткие ручные сценарии — [README.md](README.md). Production-параметры — [DECISIONS.md](DECISIONS.md).
+
+## История этапа 2 (коммит f34e6b1)
+
+Ниже сохранены результаты предыдущего этапа; они не заменяют текущие результаты этапа 3.
 
 ## Реально выполненные проверки этапа 2
 
@@ -48,13 +91,3 @@ Linux amd64; Docker 28.4.0/Compose 2.40.3; Python 3.12.15, Django 5.2.18, psycop
 ## Ранее подтвержденный этап 1
 
 Принятый этап 1 включал чистую установку с TLS/hashes, PostgreSQL runtime/migration separation, 28/28 foundation tests, HTTP/SMTP, persistence после restart db/web, отсутствие секретов .env/CA и owner/migrator credentials в web, запуск от UID 10001. Локальный временный Gunicorn с двумя workers проверял redirect/HTTPS headers с эмуляцией proxy; строгий production check возвращал 1 из-за W021. Эти исторические результаты сохранены в коммите 34b12bb; они не заменяют production-приемку или проверку новых auth-функций через внешний HTTPS.
-
-## Конфигурация среды и ограничения
-
-Подтверждено сохранение обновленного черновика **start_skill** через cloud-environment-onboarding: актуальные build/start/migrate/readiness и правила этапа 2, изолированный HTTP/SMTP smoke, безопасный bootstrap, сохранение .env/volumes и ограничения. Ранее сохраненный install_script остается действующим. Membership репозиториев, allowlist и внешние secret bindings не менялись. Сохранение не публикует среду: для будущих задач нужно проверить/сохранить черновик в настройках среды, затем опубликовать среду. Публикация и fresh-task restoration не выполнялись и не проверены.
-
-- WorkItem/Assignment, прогресс, чат и полная объектная матрица будущих заданий еще не реализованы. Отзыв Assignment при отключении пользователя относится к этапу 4; сейчас отзываются сессии и auth grants. Следующий этап 3 требует отдельной команды пользователя.
-- Ручной сценарий человеком, браузерные проверки 360/1280 px, внешние HTTPS/SMTP и proxy logging/IP, production static routing, backup/restore и нагрузка **не проверены**. Автоматический HTTP smoke не запускает браузер/JS engine. W021 остается явным ограничением до выбора production-домена.
-- Обычная сборка без cloud overlay за пределами этой среды и другие CPU/OS не проверены. Основные web/db/Mailpit работают; одноразовые smoke projects остановлены, их тестовые volumes сохранены. Удаления основной БД не было.
-
-Точные команды запуска, первого приглашения, проверок и короткий ручной сценарий — [README.md](README.md). Production-параметры — [DECISIONS.md](DECISIONS.md).

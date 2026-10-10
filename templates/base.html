@@ -11,6 +11,9 @@
   <a class="skip-link" href="#main">Перейти к содержимому</a>
   <header class="site-header"><span>Трекер задач колледжа</span>
   {% if request.user.is_authenticated %}<nav aria-label="Основная навигация"><a href="{% url 'home' %}">Мои задачи</a> · <a href="{% url 'password_change' %}">Изменить пароль</a>
+  {% if can_issue %} · <a href="{% url 'workitem_issue' %}">Выдать задание</a>{% endif %}
+  {% if can_view_issued %} · <a href="{% url 'workitems_issued' %}">Выданные</a>{% endif %}
+  {% if can_view_all %} · <a href="{% url 'workitems_all' %}">Все задания</a>{% endif %}
   {% if can_administer %} · <a href="{% url 'administration' %}">Администрирование</a>{% endif %}
   <form method="post" action="{% url 'logout' %}">{% csrf_token %}<button type="submit">Выйти</button></form></nav>{% else %}<a href="{% url 'login' %}">Вход</a>{% endif %}</header>
   <main id="main" tabindex="-1">{% block content %}{% endblock %}</main>

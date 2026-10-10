@@ -5,6 +5,7 @@ from .models import AuditEntry
 # Расширяется вместе с проверенными services следующих этапов.
 ALLOWED_CHANGES = {"environment.probe_created": {"marker"}}
 ALLOWED_CHANGES.update({
+    "workitems.issued": {"kind", "selection_id", "recipients", "subtasks", "due_at", "event_at"},
     "accounts.bootstrap_started": {"email", "full_name"},
     "accounts.employee_invited": {"email", "full_name", "roles", "groups"},
     "accounts.employee_changed": {"before", "after"},

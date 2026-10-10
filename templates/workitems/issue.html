@@ -1,0 +1,5 @@
+{% extends 'base.html' %}
+{% block content %}<section class="card"><h1>Выдать задание</h1>
+<p>Сотрудники, роли и группы объединяются по правилу ИЛИ. Перед отправкой проверьте итоговый список.</p>
+<form method="post">{% csrf_token %}{{ form.as_p }}<button type="submit">Показать получателей</button></form>
+</section>{% endblock %}

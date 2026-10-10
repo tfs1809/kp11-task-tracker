@@ -1,0 +1,10 @@
+{% extends 'base.html' %}{% block content %}<section class="card"><h1>{{ item.title }}</h1>
+<p>{{ item.get_kind_display }} · Автор: {{ item.author.full_name }}</p>
+<p>{{ item.description|linebreaksbr }}</p>
+<p>Создано: {{ item.created_at|date:'d.m.Y H:i' }} (Москва)</p>
+<p>Срок: {{ item.due_at|date:'d.m.Y H:i:s' }} (Москва)</p>
+{% if item.event_at %}<p>Дата события: {{ item.event_at|date:'d.m.Y H:i' }} (Москва)</p>{% endif %}
+{% if own_assignment %}<p>Назначено вам: {{ own_assignment.assigned_at|date:'d.m.Y H:i' }} (Москва)</p>{% endif %}
+<ol>{% for subtask in subtasks %}<li>{{ subtask.text }}</li>{% empty %}<li>Без подзадач</li>{% endfor %}</ol>
+{% if can_read_roster %}<a href="{% url 'workitem_roster' item_id=item.pk %}">Все исполнители</a>{% endif %}
+</section>{% endblock %}

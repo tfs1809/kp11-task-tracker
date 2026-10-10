@@ -1,0 +1,4 @@
+{% extends 'base.html' %}{% block content %}<section class="card"><h1>Исполнители: {{ item.title }}</h1>
+<p>Активных исполнителей: {{ assignments|length }}</p>
+<ul>{% for assignment in assignments %}<li>{{ assignment.user__full_name }} · назначено {{ assignment.assigned_at|date:'d.m.Y H:i' }} (Москва)</li>{% empty %}<li>Нет исполнителей</li>{% endfor %}</ul>
+<a href="{% url 'workitem_detail' item_id=item.pk %}">Вернуться к заданию</a></section>{% endblock %}
