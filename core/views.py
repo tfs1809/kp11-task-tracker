@@ -6,19 +6,14 @@ from django.utils.crypto import constant_time_compare
 from django.views.decorators.http import require_GET
 
 from apps.access.selectors import own_profile
+from apps.accounts.selectors import own_access
 
 from .middleware import public_view
 
 
 @require_GET
 def home(request):
-    return render(request, "core/home.html", {"profile": own_profile(request.user)})
-
-
-@public_view
-@require_GET
-def login_unavailable(request):
-    return render(request, "accounts/login_unavailable.html")
+    return render(request, "core/home.html", {"profile": own_profile(request.user), **own_access(request.user)})
 
 
 def health_allowed(request):
@@ -65,4 +60,5 @@ def error404(request, exception=None):
 
 
 def error500(request):
-    return render(request, "errors/error.html", {"code": 500, "message": "Не удалось выполнить запрос. Попробуйте позже."}, status=500)
+    # Ошибка БД не должна повторяться в auth/context processors страницы ошибки.
+    return render(None, "errors/error.html", {"code": 500, "message": "Не удалось выполнить запрос. Попробуйте позже."}, status=500)

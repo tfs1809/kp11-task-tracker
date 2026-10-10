@@ -4,13 +4,27 @@ from .models import AuditEntry
 
 # Расширяется вместе с проверенными services следующих этапов.
 ALLOWED_CHANGES = {"environment.probe_created": {"marker"}}
+ALLOWED_CHANGES.update({
+    "accounts.bootstrap_started": {"email", "full_name"},
+    "accounts.employee_invited": {"email", "full_name", "roles", "groups"},
+    "accounts.employee_changed": {"before", "after"},
+    "accounts.invitation_sent": {"invitation_id", "expires_at"},
+    "access.role_saved": {"before", "after"},
+    "audiences.group_saved": {"before", "after"},
+    **{action: set() for action in ["accounts.activated", "accounts.login", "accounts.logout", "accounts.recovery_requested", "accounts.password_reset", "accounts.password_changed"]},
+})
 
 
 def record_action(*, actor, action, object_type, object_id, changes=None, reason=""):
     require_write_transaction()
     changes = changes or {}
     allowed = ALLOWED_CHANGES.get(action)
-    if allowed is None or set(changes) - allowed:
+    def sensitive(value):
+        if isinstance(value, dict):
+            return any(key.lower() in {"password", "token", "token_digest", "cookie", "secret", "authorization", "message_text"} or sensitive(item) for key, item in value.items())
+        return isinstance(value, (list, tuple)) and any(sensitive(item) for item in value)
+
+    if allowed is None or set(changes) - allowed or sensitive(changes):
         raise ValueError("Действие или поля не разрешены каталогом аудита.")
     return AuditEntry.objects.create(
         actor=actor,

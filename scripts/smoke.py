@@ -21,7 +21,7 @@ mailpit = f"http://127.0.0.1:{args.mailpit_port}"
 with urllib.request.urlopen(web + "/", timeout=5) as response:
     body = response.read().decode()
     assert response.status == 200 and response.geturl().endswith("/accounts/login/?next=/")
-    assert "Вход по приглашению появится" in body
+    assert "Доступ только по приглашению администратора" in body
     assert response.headers["Cache-Control"] == "no-store"
 with urllib.request.urlopen(web + "/static/css/base.css", timeout=5) as response:
     assert response.status == 200 and b"focus-visible" in response.read()

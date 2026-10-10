@@ -3,6 +3,12 @@ from django.core.exceptions import ImproperlyConfigured
 from .base import *  # noqa: F403
 
 DEBUG = False
+from urllib.parse import urlsplit
+
+PUBLIC_BASE_URL = required("PUBLIC_BASE_URL").rstrip("/")  # noqa: F405
+public_origin = urlsplit(PUBLIC_BASE_URL)
+if public_origin.scheme != "https" or not public_origin.hostname or public_origin.username or public_origin.password or public_origin.query or public_origin.fragment or public_origin.path not in {"", "/"}:
+    raise ImproperlyConfigured("Нужен явный HTTPS PUBLIC_BASE_URL без пути и credentials.")
 if os.environ.get("DJANGO_DEBUG", "false").lower() not in {"0", "false", "no"}:  # noqa: F405
     raise ImproperlyConfigured("DEBUG запрещен в production.")
 if len(SECRET_KEY) < 50 or SECRET_KEY.startswith("django-insecure-"):  # noqa: F405
@@ -11,6 +17,8 @@ if len(HEALTHCHECK_TOKEN) < 32:  # noqa: F405
     raise ImproperlyConfigured("Нужен стойкий HEALTHCHECK_TOKEN.")
 if not ALLOWED_HOSTS or any(host in {"*", "localhost", "127.0.0.1", "web"} for host in ALLOWED_HOSTS):  # noqa: F405
     raise ImproperlyConfigured("Нужны явные production ALLOWED_HOSTS.")
+if public_origin.hostname not in ALLOWED_HOSTS:  # noqa: F405
+    raise ImproperlyConfigured("PUBLIC_BASE_URL должен использовать разрешенный production host.")
 CSRF_TRUSTED_ORIGINS = csv("DJANGO_CSRF_TRUSTED_ORIGINS")  # noqa: F405
 if not CSRF_TRUSTED_ORIGINS or any(not origin.startswith("https://") or "*" in origin for origin in CSRF_TRUSTED_ORIGINS):
     raise ImproperlyConfigured("Нужны явные HTTPS CSRF_TRUSTED_ORIGINS.")

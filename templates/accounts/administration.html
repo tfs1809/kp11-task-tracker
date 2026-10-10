@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card"><h1>Администрирование</h1><p><a href="{% url 'invite' %}">Пригласить сотрудника</a></p>
+<h2>Сотрудники</h2>
+<ul>{% for employee in employees %}<li><a href="{% url 'employee' employee.pk %}">{{ employee.full_name }}</a> · {{ employee.email }} · {% if not employee.is_active %}отключен{% elif employee.email_verified_at %}активирован{% else %}ожидает активации{% endif %}
+<div>Роли: {% for grant in employee.user_roles.all %}{{ grant.role.name }}{% if not grant.role.is_active %} (отключена){% endif %}{% if not forloop.last %}, {% endif %}{% empty %}нет{% endfor %}</div>
+<div>Группы: {% for membership in employee.memberships.all %}{{ membership.group.name }}{% if not membership.group.is_active %} (отключена){% endif %}{% if not forloop.last %}, {% endif %}{% empty %}нет{% endfor %}</div>
+</li>{% empty %}<li>Сотрудников пока нет.</li>{% endfor %}</ul>
+<h2>Роли</h2><p><a href="{% url 'role_new' %}">Создать роль</a></p><ul>{% for role in roles %}<li><a href="{% url 'role' role.pk %}">{{ role.name }}</a>{% if not role.is_active %} (отключена){% endif %}</li>{% endfor %}</ul>
+<h2>Группы адресатов</h2><p><a href="{% url 'group_new' %}">Создать группу</a></p><ul>{% for group in groups %}<li><a href="{% url 'group' group.pk %}">{{ group.name }}</a>{% if not group.is_active %} (отключена){% endif %}</li>{% endfor %}</ul>
+</section>
+{% endblock %}

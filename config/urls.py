@@ -1,10 +1,10 @@
-from django.urls import path
+from django.urls import include, path
 
 from core import views
 
 urlpatterns = [
     path("", views.home, name="home"),
-    path("accounts/login/", views.login_unavailable, name="login"),
+    path("", include("apps.accounts.urls")),
     path("health/live/", views.liveness, name="liveness"),
     path("health/ready/", views.readiness, name="readiness"),
 ]

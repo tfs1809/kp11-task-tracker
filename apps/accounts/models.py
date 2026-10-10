@@ -57,3 +57,44 @@ class User(AbstractBaseUser):
 
     def __str__(self):
         return self.full_name
+
+
+class Invitation(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(User, on_delete=models.PROTECT)
+    email_snapshot = models.EmailField()
+    token_digest = models.CharField(max_length=64, unique=True)
+    created_by = models.ForeignKey(User, on_delete=models.PROTECT, null=True, related_name="sent_invitations")
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+    used_at = models.DateTimeField(null=True)
+    revoked_at = models.DateTimeField(null=True)
+    version = models.PositiveIntegerField(default=1)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["user"], condition=models.Q(used_at__isnull=True, revoked_at__isnull=True), name="one_live_invitation")]
+
+
+class PasswordResetGrant(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(User, on_delete=models.PROTECT)
+    token_digest = models.CharField(max_length=64, unique=True)
+    auth_version = models.PositiveIntegerField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+    used_at = models.DateTimeField(null=True)
+    revoked_at = models.DateTimeField(null=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["user"], condition=models.Q(used_at__isnull=True, revoked_at__isnull=True), name="one_live_reset_grant")]
+
+
+class RateLimitBucket(models.Model):
+    scope = models.CharField(max_length=40)
+    key_digest = models.CharField(max_length=64)
+    window_start = models.DateTimeField()
+    count = models.PositiveIntegerField(default=0)
+    expires_at = models.DateTimeField(db_index=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["scope", "key_digest", "window_start"], name="rate_limit_window_unique")]

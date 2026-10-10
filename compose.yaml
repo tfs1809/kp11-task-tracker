@@ -13,6 +13,7 @@ x-environment: &environment
   EMAIL_HOST: mailpit
   EMAIL_PORT: "1025"
   DEFAULT_FROM_EMAIL: ${DEFAULT_FROM_EMAIL:-tracker@corp.kp11.ru}
+  PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:8000}
 
 x-tool: &tool
   image: kp11-task-tracker:development

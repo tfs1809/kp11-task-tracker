@@ -3,6 +3,8 @@
 <section class="card">
   <h1>Мои задачи</h1>
   <p>{{ profile.full_name }}</p>
-  <p class="muted">Назначения еще не реализованы.</p>
+  <p>Роли: {% for role in own_roles %}{{ role.name }}{% if not forloop.last %}, {% endif %}{% empty %}нет{% endfor %}</p>
+  <p>Группы адресатов: {% for group in own_groups %}{{ group.name }}{% if not forloop.last %}, {% endif %}{% empty %}нет{% endfor %}</p>
+  <p class="muted">Задач пока нет. Выдача заданий появится на следующем этапе.</p>
 </section>
 {% endblock %}

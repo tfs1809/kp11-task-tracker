@@ -11,3 +11,10 @@ a { color: #2158a6; display: inline-block; min-height: 44px; padding: .5rem 0; }
 :focus-visible { outline: 3px solid #2158a6; outline-offset: 3px; }
 .skip-link { position: absolute; top: -10rem; left: 1rem; background: #fff; padding: .75rem; z-index: 1; }
 .skip-link:focus { top: .5rem; }
+input:not([type=checkbox]):not([type=hidden]), select { max-width: 100%; width: 30rem; display: block; padding: .7rem; border: 1px solid #77869b; border-radius: .3rem; font: inherit; }
+input[type=checkbox] { width: 1.2rem; height: 1.2rem; }
+button { min-height: 44px; padding: .6rem 1rem; font: inherit; cursor: pointer; background: #2158a6; color: #fff; border: 0; border-radius: .3rem; }
+label { display: inline-block; margin-bottom: .4rem; }
+.errorlist { color: #9b2424; }
+.site-header nav { font-weight: normal; }
+li { margin-bottom: .6rem; }

@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}{{ title }} — Трекер задач{% endblock %}
+{% block content %}
+<section class="card">
+  <h1>{{ title }}</h1>
+  {% if message %}<p role="status">{{ message }}</p>{% endif %}
+  {% if password_help %}<p>Минимум 12 символов. Пароль не должен быть распространенным, состоять только из цифр или совпадать с вашими данными.</p>{% endif %}
+  {% if form %}
+  <form method="post" action="{{ request.path }}">
+    {% csrf_token %}
+    {{ form.as_p }}
+    {% if login_page %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
+    <button type="submit">{{ submit }}</button>
+  </form>
+  {% endif %}
+  {% if login_page %}<p>Доступ только по приглашению администратора.</p><p><a href="{% url 'recovery' %}">Забыли пароль?</a></p>{% endif %}
+  {% if pending_employee %}<form method="post" action="{% url 'resend' pending_employee.pk %}">{% csrf_token %}<button type="submit">Отозвать старую ссылку и отправить новое приглашение</button></form>{% endif %}
+  {% if employee_id %}<p><a href="{% url 'employee' employee_id %}">Открыть сотрудника</a></p>{% endif %}
+  {% if finished %}<p><a href="{% url 'login' %}">Войти</a></p>{% endif %}
+</section>
+{% endblock %}

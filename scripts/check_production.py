@@ -12,6 +12,7 @@ environment.update({
     "DJANGO_DEBUG": "false",
     "EMAIL_HOST": "smtp.example.org",
     "EMAIL_PORT": "587",
+    "PUBLIC_BASE_URL": "https://tracker.corp.kp11.ru",
 })
 result = subprocess.run(
     [sys.executable, "manage.py", "check", "--deploy", "--fail-level", "ERROR"],

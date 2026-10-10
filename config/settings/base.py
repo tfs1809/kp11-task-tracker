@@ -49,7 +49,7 @@ TEMPLATES = [{
     "BACKEND": "django.template.backends.django.DjangoTemplates",
     "DIRS": [BASE_DIR / "templates"],
     "APP_DIRS": True,
-    "OPTIONS": {"context_processors": ["django.template.context_processors.request"]},
+    "OPTIONS": {"context_processors": ["django.template.context_processors.request", "apps.accounts.context_processors.navigation"]},
 }]
 DATABASES = {"default": {
     "ENGINE": "django.db.backends.postgresql",
@@ -62,8 +62,9 @@ DATABASES = {"default": {
     "OPTIONS": {"connect_timeout": 5},
 }}
 AUTH_USER_MODEL = "accounts.User"
-# До этапа 2 отсутствует возможность входа; Django Admin не подключен.
-AUTHENTICATION_BACKENDS = ["apps.accounts.backends.ClosedBackend"]
+AUTHENTICATION_BACKENDS = ["apps.accounts.backends.EmailBackend"]
+PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL", "http://localhost:8000").rstrip("/")
+PASSWORD_RESET_TIMEOUT = 3600
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
     {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator", "OPTIONS": {"min_length": 12}},

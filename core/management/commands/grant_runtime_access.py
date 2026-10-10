@@ -21,6 +21,7 @@ class Command(BaseCommand):
             cursor.execute(f"GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO {quoted}")
             cursor.execute(f"REVOKE UPDATE, DELETE, TRUNCATE ON audit_auditentry FROM {quoted}")
             cursor.execute(f"REVOKE INSERT, DELETE, TRUNCATE ON access_accessguard FROM {quoted}")
+            cursor.execute(f"REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON access_permission FROM {quoted}")
             # Runtime не меняет структуру, права, аудит или историю миграций.
             cursor.execute(f"REVOKE CREATE ON SCHEMA public FROM {quoted}")
             cursor.execute(f"REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON django_migrations FROM {quoted}")

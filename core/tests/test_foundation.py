@@ -44,11 +44,11 @@ class UserSchemaTests(TestCase):
             with self.subTest(email=email), self.assertRaises(IntegrityError), transaction.atomic():
                 User.objects.create(email=email, full_name="Тест")
 
-    def test_closed_backend_does_not_authenticate_even_valid_password(self):
+    def test_email_backend_authenticates_without_granting_permissions(self):
         user = employee()
         user.set_password("stage1-long-valid-test-password")
         user.save()
-        self.assertIsNone(authenticate(email=user.email, password="stage1-long-valid-test-password"))
+        self.assertEqual(authenticate(email=user.email, password="stage1-long-valid-test-password").pk, user.pk)
         self.assertFalse(has_permission(user, "accounts.manage_users"))
 
 
@@ -57,7 +57,7 @@ class AccessHTTPTests(TestCase):
         self.actor = employee()
 
     def login_session(self):
-        self.client.force_login(self.actor, backend="apps.accounts.backends.ClosedBackend")
+        self.client.force_login(self.actor, backend="apps.accounts.backends.EmailBackend")
         session = self.client.session
         session["auth_version"] = self.actor.auth_version
         session.save()
@@ -65,7 +65,7 @@ class AccessHTTPTests(TestCase):
     def test_anonymous_root_redirects_and_login_is_honest(self):
         self.assertRedirects(self.client.get("/"), "/accounts/login/?next=/")
         response = self.client.get("/accounts/login/")
-        self.assertContains(response, "Вход по приглашению появится")
+        self.assertContains(response, "Доступ только по приглашению администратора")
         self.assertEqual(response["Cache-Control"], "no-store")
         self.assertNotContains(response, "employee@corp.kp11.ru")
 
@@ -87,7 +87,7 @@ class AccessHTTPTests(TestCase):
         self.assertNotContains(response, other.full_name)
 
     def test_session_without_epoch_denied(self):
-        self.client.force_login(self.actor, backend="apps.accounts.backends.ClosedBackend")
+        self.client.force_login(self.actor, backend="apps.accounts.backends.EmailBackend")
         self.assertEqual(self.client.get("/").status_code, 302)
 
     def test_auth_version_revocation_applies_to_existing_session(self):
@@ -236,6 +236,7 @@ class ProductionSettingsTests(TestCase):
             "DJANGO_CSRF_TRUSTED_ORIGINS": "https://tracker.corp.kp11.ru",
             "DJANGO_DEBUG": "false",
             "EMAIL_HOST": "smtp.example.org", "EMAIL_PORT": "587",
+            "PUBLIC_BASE_URL": "https://tracker.corp.kp11.ru",
         })
         environment.update(changes or {})
         code = "import django; django.setup(); from django.conf import settings; assert not settings.DEBUG; assert settings.SESSION_COOKIE_SECURE and settings.CSRF_COOKIE_SECURE; assert settings.EMAIL_USE_TLS; print('production settings OK')"
