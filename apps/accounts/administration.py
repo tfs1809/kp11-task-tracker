@@ -43,6 +43,9 @@ def edit_employee(*, actor_id, auth_version, user_id, expected_version, full_nam
             now = timezone.now()
             Invitation.objects.filter(user=user, revoked_at__isnull=True, used_at__isnull=True).update(revoked_at=now)
             PasswordResetGrant.objects.filter(user=user, revoked_at__isnull=True, used_at__isnull=True).update(revoked_at=now)
+        if user.is_active and not is_active:
+            from apps.workitems.workflow import revoke_employee_assignments
+            revoke_employee_assignments(actor, user)
         user.is_active = is_active
         user.version += 1
         user.full_clean()

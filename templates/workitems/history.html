@@ -1,0 +1,10 @@
+{% extends 'base.html' %}{% block content %}<section class="card"><h1>История: {{ item.title }}</h1><ol>{% for entry in entries %}<li>{{ entry.at|date:'d.m.Y H:i:s' }} (Москва) · {{ entry.actor }} · {{ entry.action }}
+{% if entry.employee %}<p>Исполнитель: {{ entry.employee }}</p>{% endif %}
+{% if entry.reason %}<p>Причина: {{ entry.reason }}</p>{% endif %}
+{% if entry.mark_action %}<p>{{ entry.subtask_text }}: {{ entry.mark_action }}</p>{% endif %}
+{% if entry.completed_at %}<p>Выполнено: {{ entry.completed_at|date:'d.m.Y H:i:s' }} (Москва)</p>{% endif %}
+{% if entry.previous_completed_at %}<p>Предыдущее выполнение: {{ entry.previous_completed_at|date:'d.m.Y H:i:s' }} (Москва)</p>{% endif %}
+{% if entry.restoration %}<p>Совместимых отметок восстановлено: {{ entry.restoration.checked_count }}. {% if entry.restoration.restores_completed %}Выполнение восстановлено.{% else %}Прежнее выполнение не восстановлено.{% endif %}</p>{% endif %}
+{% if entry.revision_before %}<details><summary>Содержание до изменения</summary><h2>{{ entry.revision_before.title }}</h2><p>{{ entry.revision_before.description|linebreaksbr }}</p><p>Срок: {{ entry.revision_before.due_at|date:'d.m.Y H:i:s' }} (Москва)</p><ol>{% for text in entry.revision_before.subtasks %}<li>{{ text }}</li>{% empty %}<li>Без подзадач</li>{% endfor %}</ol></details>
+<details><summary>Содержание после изменения</summary><h2>{{ entry.revision_after.title }}</h2><p>{{ entry.revision_after.description|linebreaksbr }}</p><p>Срок: {{ entry.revision_after.due_at|date:'d.m.Y H:i:s' }} (Москва)</p><ol>{% for text in entry.revision_after.subtasks %}<li>{{ text }}</li>{% empty %}<li>Без подзадач</li>{% endfor %}</ol></details>{% endif %}
+</li>{% empty %}<li>Записей пока нет.</li>{% endfor %}</ol><a href="{% url 'workitem_detail' item_id=item.pk %}">Карточка</a></section>{% endblock %}

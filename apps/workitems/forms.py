@@ -55,3 +55,70 @@ class IssueForm(ContentForm):
 class ConfirmationForm(forms.Form):
     preview = forms.CharField(widget=forms.HiddenInput, max_length=200000)
     request_key = forms.UUIDField(widget=forms.HiddenInput)
+
+
+class VersionForm(forms.Form):
+    version = forms.IntegerField(widget=forms.HiddenInput, min_value=1)
+    item_version = forms.IntegerField(widget=forms.HiddenInput, min_value=1)
+
+
+class MarkForm(VersionForm):
+    progress_version = forms.IntegerField(widget=forms.HiddenInput, min_value=1)
+    value = forms.TypedChoiceField(choices=[('true', 'Отметить'), ('false', 'Снять отметку')], coerce=lambda value: value == 'true', widget=forms.HiddenInput)
+
+
+class CompletionForm(VersionForm):
+    completed = forms.TypedChoiceField(choices=[('true', 'Выполнено'), ('false', 'Вернуть')], coerce=lambda value: value == 'true', widget=forms.HiddenInput)
+
+
+class RevokeForm(VersionForm):
+    reason = forms.CharField(label='Причина отзыва', max_length=500)
+
+
+class ArchiveForm(forms.Form):
+    version = forms.IntegerField(widget=forms.HiddenInput, min_value=1)
+
+
+class EditContentForm(ContentForm):
+    kind = None
+    subtasks = None
+    version = forms.IntegerField(widget=forms.HiddenInput, min_value=1)
+
+    def __init__(self, *args, kind, **kwargs):
+        self.kind = kind
+        super().__init__(*args, **kwargs)
+
+    def clean(self):
+        # kind immutable: HTTP не задает его, service читает из WorkItem.
+        self.cleaned_data['kind'] = self.kind
+        return super().clean()
+
+    def payload(self, entries):
+        data = self.cleaned_data
+        return {'title': data['title'], 'description': data['description'], 'due_at': datetime.combine(data['due_date'], time.max, MOSCOW).astimezone(dt_timezone.utc).isoformat(), 'event_at': data['event_at'].astimezone(dt_timezone.utc).isoformat() if data['event_at'] else None, 'subtasks': entries}
+
+
+class SubtaskEditForm(forms.Form):
+    id = forms.UUIDField(required=False, widget=forms.HiddenInput)
+    text = forms.CharField(label='Текст подзадачи', max_length=1000, required=False)
+    position = forms.IntegerField(label='Порядок', min_value=1, max_value=50, required=False)
+    delete = forms.BooleanField(label='Убрать подзадачу', required=False)
+
+
+SubtaskEditFormSet = forms.formset_factory(SubtaskEditForm, extra=1, max_num=50, validate_max=True, absolute_max=100)
+
+
+class AddAssigneesForm(forms.Form):
+    users = forms.MultipleChoiceField(label='Отдельные сотрудники', required=False, widget=forms.CheckboxSelectMultiple)
+    roles = forms.MultipleChoiceField(label='Роли адресатов (ИЛИ)', required=False, widget=forms.CheckboxSelectMultiple)
+    groups = forms.MultipleChoiceField(label='Группы адресатов (ИЛИ)', required=False, widget=forms.CheckboxSelectMultiple)
+    version = forms.IntegerField(widget=forms.HiddenInput, min_value=1)
+
+    def __init__(self, *args, directory, **kwargs):
+        super().__init__(*args, **kwargs)
+        for name in ('users', 'roles', 'groups'):
+            self.fields[name].choices = [(str(pk), label) for pk, label in directory[name]]
+
+
+class WorkflowConfirmationForm(forms.Form):
+    token = forms.CharField(widget=forms.HiddenInput, max_length=200000)

@@ -141,3 +141,19 @@ class MutationReceipt(models.Model):
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=['actor', 'operation', 'request_key'], name='receipt_unique_request')]
+
+
+class SubtaskProgress(models.Model):
+    work_item = models.ForeignKey(WorkItem, on_delete=models.PROTECT, related_name='+')
+    assignment = models.ForeignKey(Assignment, on_delete=models.PROTECT, related_name='progress')
+    subtask = models.ForeignKey(Subtask, on_delete=models.PROTECT, related_name='progress')
+    checked_at = models.DateTimeField(null=True, blank=True)
+    checked_revision = models.PositiveIntegerField(null=True, blank=True)
+    version = models.PositiveIntegerField(default=1)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=['assignment', 'subtask'], name='progress_unique_mark'),
+            models.CheckConstraint(condition=Q(checked_at__isnull=True, checked_revision__isnull=True) | Q(checked_at__isnull=False, checked_revision__isnull=False, checked_revision__gte=1), name='progress_checked_pair'),
+            models.CheckConstraint(condition=Q(version__gte=1), name='progress_positive_version'),
+        ]

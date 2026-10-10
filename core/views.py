@@ -14,7 +14,7 @@ from .middleware import public_view
 
 @require_GET
 def home(request):
-    return render(request, "core/home.html", {"profile": own_profile(request.user), **own_access(request.user), "assignments": own_assignments(request.user)})
+    return render(request, "core/home.html", {"profile": own_profile(request.user), **own_access(request.user), "assignments": own_assignments(request.user).filter(completed_at__isnull=True), "completed_assignments": own_assignments(request.user).filter(completed_at__isnull=False)})
 
 
 def health_allowed(request):

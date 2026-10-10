@@ -1,10 +1,25 @@
 {% extends 'base.html' %}{% block content %}<section class="card"><h1>{{ item.title }}</h1>
+{% if error %}<p role="alert">{{ error }}</p>{% endif %}
 <p>{{ item.get_kind_display }} · Автор: {{ item.author.full_name }}</p>
+{% if item.archived_at %}<p><strong>Архив — только чтение</strong></p>{% endif %}
 <p>{{ item.description|linebreaksbr }}</p>
 <p>Создано: {{ item.created_at|date:'d.m.Y H:i' }} (Москва)</p>
 <p>Срок: {{ item.due_at|date:'d.m.Y H:i:s' }} (Москва)</p>
 {% if item.event_at %}<p>Дата события: {{ item.event_at|date:'d.m.Y H:i' }} (Москва)</p>{% endif %}
-{% if own_assignment %}<p>Назначено вам: {{ own_assignment.assigned_at|date:'d.m.Y H:i' }} (Москва)</p>{% endif %}
-<ol>{% for subtask in subtasks %}<li>{{ subtask.text }}</li>{% empty %}<li>Без подзадач</li>{% endfor %}</ol>
-{% if can_read_roster %}<a href="{% url 'workitem_roster' item_id=item.pk %}">Все исполнители</a>{% endif %}
+{% if own_assignment %}
+<p>Назначено вам: {{ own_assignment.assigned_at|date:'d.m.Y H:i' }} (Москва)</p>
+{% if overdue %}<p>Просрочено. Выполнение остается доступным.</p>{% endif %}
+{% if own_assignment.completed_at %}<p>Выполнено: {{ own_assignment.completed_at|date:'d.m.Y H:i' }} (Москва)</p>{% endif %}
+<ul>{% for row in progress_rows %}<li>{{ row.subtask.text }} — {% if row.checked %}отмечено{% else %}не отмечено{% endif %}
+{% if not item.archived_at and not own_assignment.completed_at %}
+<form method="post" action="{% url 'assignment_mark' assignment_id=own_assignment.pk subtask_id=row.subtask.pk %}">{% csrf_token %}
+<input type="hidden" name="version" value="{{ own_assignment.version }}"><input type="hidden" name="item_version" value="{{ item.version }}"><input type="hidden" name="progress_version" value="{{ row.progress.version }}"><input type="hidden" name="value" value="{% if row.checked %}false{% else %}true{% endif %}">
+<button type="submit">{% if row.checked %}Снять отметку{% else %}Отметить{% endif %}</button></form>{% endif %}
+</li>{% empty %}<li>Без подзадач</li>{% endfor %}</ul>
+{% if not item.archived_at %}<form method="post" action="{% url 'assignment_completion' assignment_id=own_assignment.pk %}">{% csrf_token %}<input type="hidden" name="version" value="{{ own_assignment.version }}"><input type="hidden" name="item_version" value="{{ item.version }}"><input type="hidden" name="completed" value="{% if own_assignment.completed_at %}false{% else %}true{% endif %}"><button type="submit" {% if not own_assignment.completed_at and not all_checked %}disabled{% endif %}>{% if own_assignment.completed_at %}Вернуть{% else %}Выполнено{% endif %}</button></form>{% endif %}
+{% else %}<ol>{% for subtask in subtasks %}<li>{{ subtask.text }}</li>{% empty %}<li>Без подзадач</li>{% endfor %}</ol>{% endif %}
+{% if can_read_roster %}{% if statistics.total %}<p>Активных: {{ statistics.total }} · Выполнили: {{ statistics.completed }} · {{ statistics.percent }}%</p>{% else %}<p>Нет исполнителей</p>{% endif %}<a href="{% url 'workitem_roster' item_id=item.pk %}">Все исполнители</a> · <a href="{% url 'workitem_roster' item_id=item.pk %}?incomplete=1">Не выполнили</a>{% endif %}
+<p><a href="{% url 'workitem_history' item_id=item.pk %}">История действий</a></p>
+{% if can_edit %}<p><a href="{% url 'workitem_edit' item_id=item.pk %}">Редактировать</a></p><form method="post" action="{% url 'workitem_archive' item_id=item.pk %}">{% csrf_token %}<input type="hidden" name="version" value="{{ item.version }}"><button type="submit">Архивировать</button></form>{% endif %}
+{% if can_manage %}<p><a href="{% url 'workitem_add' item_id=item.pk %}">Добавить / восстановить исполнителей</a></p>{% endif %}
 </section>{% endblock %}

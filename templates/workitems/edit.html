@@ -1,0 +1,4 @@
+{% extends 'base.html' %}{% block content %}<section class="card"><h1>Редактировать: {{ item.title }}</h1>{% if error %}<p role="alert">{{ error }}</p>{% endif %}<p><a href="{% url 'workitem_detail' item_id=item.pk %}" target="_blank" rel="noopener">Актуальная карточка</a> · версия {{ item.version }}</p>
+<form method="post">{% csrf_token %}{{ form.as_p }}{{ formset.management_form }}{{ formset.non_form_errors }}
+{% for row in formset %}<fieldset><legend>Подзадача {{ forloop.counter }}</legend>{{ row.as_p }}</fieldset>{% endfor %}
+<p>Для перестановки измените порядок. Пустая последняя строка добавляет подзадачу; после сохранения снова доступна новая строка.</p><button type="submit">Показать последствия</button></form></section>{% endblock %}

@@ -144,6 +144,8 @@ def issue_item(*, actor_id, auth_version, request_key, payload, preview_token):
                 source_rows[name, pk] = model.objects.create(selection=selection, label_snapshot=label, **{field: pk})
         for recipient in current['recipients']:
             assignment = Assignment.objects.create(work_item=item, user_id=recipient['id'], assigned_by=actor, first_assigned_at=now, assigned_at=now)
+            from .workflow import initialize_progress
+            initialize_progress(assignment)
             for name, pk in recipient['sources']:
                 field = {'users': 'selected_user', 'roles': 'selected_role', 'groups': 'selected_group'}[name]
                 AssignmentSource.objects.create(assignment=assignment, batch_id=selection.batch_id, **{field: source_rows[name, pk]})

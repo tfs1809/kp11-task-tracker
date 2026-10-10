@@ -5,6 +5,9 @@
   <p>{{ profile.full_name }}</p>
   <p>Роли: {% for role in own_roles %}{{ role.name }}{% if not forloop.last %}, {% endif %}{% empty %}нет{% endfor %}</p>
   <p>Группы адресатов: {% for group in own_groups %}{{ group.name }}{% if not forloop.last %}, {% endif %}{% empty %}нет{% endfor %}</p>
+  <h2>Назначены</h2>
   <ul>{% for assignment in assignments %}<li><a href="{% url 'workitem_detail' item_id=assignment.work_item_id %}">{{ assignment.work_item.title }}</a> · {{ assignment.work_item.get_kind_display }} · {{ assignment.work_item.author.full_name }} · до {{ assignment.work_item.due_at|date:'d.m.Y H:i:s' }} (Москва)</li>{% empty %}<li>Задач пока нет.</li>{% endfor %}</ul>
+  <h2>Выполнены</h2>
+  <ul>{% for assignment in completed_assignments %}<li><a href="{% url 'workitem_detail' item_id=assignment.work_item_id %}">{{ assignment.work_item.title }}</a> · выполнено {{ assignment.completed_at|date:'d.m.Y H:i' }} (Москва)</li>{% empty %}<li>Выполненных заданий пока нет.</li>{% endfor %}</ul>
 </section>
 {% endblock %}
