@@ -1,0 +1,13 @@
+:root { color-scheme: light; font-family: system-ui, sans-serif; color: #253247; background: #f4f6f9; }
+* { box-sizing: border-box; }
+body { margin: 0; overflow-wrap: anywhere; }
+.site-header { background: #fff; border-bottom: 1px solid #d7dde6; padding: 1rem; font-weight: 650; }
+main { width: min(100%, 64rem); margin: 2rem auto; padding: 0 1rem; }
+.card { background: #fff; border: 1px solid #d7dde6; border-radius: .75rem; padding: clamp(1rem, 4vw, 2rem); }
+h1 { font-size: clamp(1.5rem, 5vw, 2rem); margin-top: 0; }
+p { line-height: 1.6; }
+.muted { color: #526177; }
+a { color: #2158a6; display: inline-block; min-height: 44px; padding: .5rem 0; }
+:focus-visible { outline: 3px solid #2158a6; outline-offset: 3px; }
+.skip-link { position: absolute; top: -10rem; left: 1rem; background: #fff; padding: .75rem; z-index: 1; }
+.skip-link:focus { top: .5rem; }

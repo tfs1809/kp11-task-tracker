@@ -1,0 +1,15 @@
+{% load static %}
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Трекер задач колледжа{% endblock %}</title>
+  <link rel="stylesheet" href="{% static 'css/base.css' %}">
+</head>
+<body>
+  <a class="skip-link" href="#main">Перейти к содержимому</a>
+  <header class="site-header"><span>Трекер задач колледжа</span></header>
+  <main id="main" tabindex="-1">{% block content %}{% endblock %}</main>
+</body>
+</html>

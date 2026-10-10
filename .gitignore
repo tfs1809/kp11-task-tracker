@@ -1,0 +1,14 @@
+.env
+.env.*
+!.env.example
+.venv/
+.cache/
+__pycache__/
+*.py[cod]
+staticfiles/
+coverage.xml
+.coverage
+test-results/
+backups/
+*.dump
+*.log

@@ -1,0 +1,90 @@
+name: kp11-task-tracker
+
+x-environment: &environment
+  DJANGO_SETTINGS_MODULE: config.settings.development
+  DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?Run python3 scripts/init_dev_env.py}
+  HEALTHCHECK_TOKEN: ${HEALTHCHECK_TOKEN:?Run python3 scripts/init_dev_env.py}
+  POSTGRES_DB: ${POSTGRES_DB:-kp11}
+  DB_HOST: db
+  DB_PORT: "5432"
+  DB_APP_USER: ${DB_APP_USER:-kp11_app}
+  DB_APP_PASSWORD: ${DB_APP_PASSWORD:?Run python3 scripts/init_dev_env.py}
+  DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1,web}
+  EMAIL_HOST: mailpit
+  EMAIL_PORT: "1025"
+  DEFAULT_FROM_EMAIL: ${DEFAULT_FROM_EMAIL:-tracker@corp.kp11.ru}
+
+x-tool: &tool
+  image: kp11-task-tracker:development
+  build: .
+  profiles: [tools]
+  depends_on:
+    db:
+      condition: service_healthy
+  environment:
+    <<: *environment
+    DJANGO_SETTINGS_MODULE: config.settings.migration
+    DB_MIGRATOR_USER: ${DB_MIGRATOR_USER:-kp11_migrator}
+    DB_MIGRATOR_PASSWORD: ${DB_MIGRATOR_PASSWORD:?Run python3 scripts/init_dev_env.py}
+
+services:
+  db:
+    image: postgres:17.11-bookworm@sha256:3645570cccdfa447589da9f57dd740faa29b30938e861289a5574b6ca6b03826
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-kp11}
+      POSTGRES_USER: ${POSTGRES_USER:-kp11_owner}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Run python3 scripts/init_dev_env.py}
+      DB_APP_USER: ${DB_APP_USER:-kp11_app}
+      DB_APP_PASSWORD: ${DB_APP_PASSWORD:?Run python3 scripts/init_dev_env.py}
+      DB_MIGRATOR_USER: ${DB_MIGRATOR_USER:-kp11_migrator}
+      DB_MIGRATOR_PASSWORD: ${DB_MIGRATOR_PASSWORD:?Run python3 scripts/init_dev_env.py}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/init.sh:/docker-entrypoint-initdb.d/10-roles.sh:ro
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+  mailpit:
+    image: axllent/mailpit:v1.31.4@sha256:b68349e3a014b90c5610bfb26b2ae36f3892d7b8cf25ee140c6c71c98d2fcf48
+    environment:
+      MP_DATABASE: /data/mailpit.db
+    volumes:
+      - mailpit_data:/data
+    ports:
+      - "127.0.0.1:${MAILPIT_PORT:-8025}:8025"
+    restart: unless-stopped
+  web:
+    image: kp11-task-tracker:development
+    build: .
+    environment: *environment
+    command: [python, manage.py, runserver, "0.0.0.0:8000", --noreload]
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${WEB_PORT:-8000}:8000"
+    healthcheck:
+      test: [CMD, python, scripts/check_health.py]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+    restart: unless-stopped
+  migrate:
+    <<: *tool
+    command: [python, manage.py, prepare_database]
+  tests:
+    <<: *tool
+    environment:
+      <<: *environment
+      DJANGO_SETTINGS_MODULE: config.settings.test
+      DB_MIGRATOR_USER: ${DB_MIGRATOR_USER:-kp11_migrator}
+      DB_MIGRATOR_PASSWORD: ${DB_MIGRATOR_PASSWORD:?Run python3 scripts/init_dev_env.py}
+    command: [python, manage.py, test, --noinput, --verbosity, "2"]
+
+volumes:
+  postgres_data:
+  mailpit_data:

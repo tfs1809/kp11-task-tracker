@@ -1,0 +1,14 @@
+# Только для cloud с доверенным TLS proxy. CA не включается в образ.
+services:
+  web:
+    build:
+      secrets: [build_ca]
+  migrate:
+    build:
+      secrets: [build_ca]
+  tests:
+    build:
+      secrets: [build_ca]
+secrets:
+  build_ca:
+    file: /etc/ssl/certs/ca-certificates.crt

@@ -1,0 +1,11 @@
+.git
+.env*
+.venv
+.cache
+__pycache__
+**/__pycache__
+staticfiles
+backups
+test-results
+*.dump
+*.log
