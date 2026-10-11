@@ -63,7 +63,7 @@ def confirm(request):
 @require_GET
 def issued(request):
     context = item_list(request.user, request.GET, 'issued')
-    return render(request, 'workitems/list.html', {'heading': 'Выданные', **context}, status=context['status'])
+    return render(request, 'workitems/list.html', {'heading': 'Выдано мной', **context}, status=context['status'])
 
 
 @require_GET

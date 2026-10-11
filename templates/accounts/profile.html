@@ -1,0 +1,7 @@
+{% extends 'base.html' %}{% block title %}Профиль — Трек задач КП11{% endblock %}{% block content %}
+<section class="profile-page card">
+<p class="eyebrow">Личные данные</p><h1>Профиль</h1>
+<dl><div><dt>ФИО</dt><dd>{{ profile.full_name }}</dd></div><div><dt>Почта</dt><dd>{{ profile.email }}</dd></div></dl>
+<p><a class="button" href="{% url 'password_change' %}">Изменить пароль</a></p>
+<details class="profile"><summary>Роли и группы</summary><p>Роли: {% for role in own_roles %}{{ role.name }}{% if not forloop.last %}, {% endif %}{% empty %}нет{% endfor %}</p><p>Группы адресатов: {% for group in own_groups %}{{ group.name }}{% if not forloop.last %}, {% endif %}{% empty %}нет{% endfor %}</p></details>
+</section>{% endblock %}

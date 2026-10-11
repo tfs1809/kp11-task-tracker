@@ -1,7 +1,7 @@
 {% extends 'base.html' %}{% load static %}{% block content %}
 <section class="card" id="chat" data-changes-url="{% url 'event_chat_changes' item_id=item.pk %}" data-cursor="{{ cursor }}" data-moderate="{{ state.can_moderate|yesno:'true,false' }}" data-original="{{ state.can_original|yesno:'true,false' }}">
 <h1>Чат события: {{ item.title }}</h1>
-<p id="chat-state" role="status">{% if state.archived %}Архив — только чтение{% elif state.closed %}Чат закрыт — только чтение{% else %}Чат открыт{% endif %}</p>
+<p id="chat-state" role="status">{% if state.archived %}Архив — только чтение{% elif state.time_locked %}Чат доступен только для чтения{% elif state.closed %}Чат закрыт — только чтение{% else %}Чат открыт{% endif %}</p>
 {% if error %}<p class="notice error-summary" role="alert">{{ error }}</p>{% endif %}
 <p id="chat-update" role="status"></p>
 {% if before_id %}<p><a href="?before_id={{ before_id }}">Предыдущие сообщения</a> · <a href="{% url 'event_chat' item_id=item.pk %}">Последние сообщения</a></p>{% else %}<p><a href="{% url 'event_chat' item_id=item.pk %}">Обновить историю</a></p>{% endif %}

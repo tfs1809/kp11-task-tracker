@@ -9,6 +9,7 @@ urlpatterns = [
     path("accounts/recovery/", views.recovery_view, name="recovery"),
     path("accounts/reset/", views.reset_view, name="reset"),
     path("accounts/password/", views.password_change_view, name="password_change"),
+    path("accounts/profile/", views.profile_view, name="profile"),
     path("administration/", views.administration_view, name="administration"),
     path("administration/invite/", views.invitation_view, name="invite"),
     path("administration/employees/<uuid:user_id>/", views.employee_view, name="employee"),

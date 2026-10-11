@@ -11,6 +11,7 @@ from apps.audiences.models import AudienceGroup
 
 from .models import Assignment, WorkItem
 from .policies import can_read_roster, can_edit, can_manage_assignees, require_issue
+from .state import assignment_can_restore, assignment_completed, event_chat_locked
 
 
 def recipient_directory(actor, item=None):
@@ -42,7 +43,9 @@ def own_assignments(actor):
 
 def issued_items(actor):
     require_permission(actor, 'workitems.view_own')
-    return WorkItem.objects.filter(author_id=actor.pk).select_related('author')
+    # An author who is also an active executor sees the assignment only in
+    # «Мои задачи», never duplicated in «Выдано мной».
+    return WorkItem.objects.filter(author_id=actor.pk).exclude(assignments__user_id=actor.pk, assignments__state='active').select_related('author')
 
 
 def all_items(actor):
@@ -68,7 +71,14 @@ def item_detail(actor, item_id):
     subtasks = list(item.subtasks.filter(deleted_at__isnull=True))
     roster = can_read_roster(actor, item)
     rows = progress_rows(own, subtasks) if own else []
-    return {'item': item, 'subtasks': subtasks, 'own_assignment': own, 'progress_rows': rows, 'all_checked': all(row['checked'] for row in rows), 'can_read_roster': roster, 'statistics': statistics(item) if roster else None, 'can_edit': can_edit(actor, item), 'can_manage': can_manage_assignees(actor, item), 'overdue': bool(own and not own.completed_at and not item.archived_at and item.due_at < timezone.now())}
+    now = timezone.now()
+    effective_completed = assignment_completed(own, now) if own else False
+    if own:
+        # Template-facing attributes keep the persisted completion timestamp intact
+        # while exposing the lazy event transition consistently.
+        own.effective_completed = effective_completed
+        own.can_restore = assignment_can_restore(own, now)
+    return {'item': item, 'subtasks': subtasks, 'own_assignment': own, 'progress_rows': rows, 'all_checked': all(row['checked'] for row in rows), 'can_read_roster': roster, 'statistics': statistics(item) if roster else None, 'can_edit': can_edit(actor, item), 'can_manage': can_manage_assignees(actor, item), 'overdue': bool(own and not effective_completed and not item.archived_at and item.due_at < now), 'event_chat_locked': event_chat_locked(item, now), 'effective_completed': effective_completed}
 
 
 def item_roster(actor, item_id, *, incomplete=False, history=False):

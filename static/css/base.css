@@ -21,3 +21,53 @@ dl { display: grid; gap: .5rem; } dl > div { display: flex; flex-wrap: wrap; gap
 .message-text { white-space: pre-wrap; overflow-wrap: anywhere; }
 .message-author { font-weight: 700; }
 .message-date { font-size: .9rem; }
+
+/* Main task interface follows the approved КП11 layout. */
+:root { --kp11-purple: #1900a4; --kp11-lavender: #dcdcfb; --kp11-overdue: #faaba8; }
+body { background: #fff; color: #111; }
+.site-header { border-bottom: 0; background: #fff; }
+.header-inner { max-width: 116rem; min-height: 7rem; padding: 1.25rem 2rem; }
+.brand { color: var(--kp11-purple); font-size: 1.35rem; font-weight: 800; }
+.brand span { display: none; }
+.site-header nav { justify-content: center; gap: .75rem 1.8rem; }
+.site-header nav a, .nav-logout { color: var(--kp11-purple); font-weight: 700; text-decoration: none; }
+.site-header nav a[aria-current="page"] { text-decoration: underline; text-decoration-thickness: 2px; }
+.account-actions form { margin: 0; }
+.nav-logout { min-height: 44px; border: 0; padding: .5rem 0; background: transparent; cursor: pointer; font: inherit; }
+main { width: min(100%, 116rem); margin: 0 auto 3rem; padding: 0 2rem; }
+.dashboard-shell { max-width: 52rem; margin: 1rem auto 0; }
+.dashboard-shell > .page-heading { display: none; }
+.task-tabs { margin: 0 0 1rem; border: 0; gap: .65rem; }
+.task-tabs a { min-height: 48px; padding: .65rem 1.25rem; border: 1px solid var(--kp11-purple); border-radius: 12px; color: var(--kp11-purple); font-weight: 700; }
+.task-tabs a[aria-current="page"] { color: #fff; background: var(--kp11-purple); border-color: var(--kp11-purple); }
+.task-tabs .tab-action { margin-left: auto; color: var(--kp11-purple); background: #fff; }
+.interface-filters { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(10rem, .9fr) minmax(10rem, .95fr); gap: .75rem; padding: 0; margin-bottom: 1rem; border: 0; background: transparent; align-items: stretch; }
+.interface-filters .form-field { margin: 0; }
+.interface-filters .form-field > label { display: none; }
+.interface-filters input, .interface-filters select { min-height: 48px; border: 0; border-radius: 12px; background: var(--kp11-lavender); color: #111; padding: .75rem 1rem; }
+.interface-filters .actions { display: none; }
+.task-list { display: grid; gap: 1rem; }
+.interface-card { padding: 1.25rem 1.5rem; border: 0; border-radius: 12px; background: var(--kp11-lavender); }
+.interface-card.task-card--overdue { background: var(--kp11-overdue); }
+.interface-card h2 { margin: .3rem 0 .6rem; font-size: 1.2rem; }
+.interface-card h2 a { color: #111; min-height: 0; padding: 0; font-weight: 800; text-decoration: none; }
+.interface-card .task-description { margin: .25rem 0; }
+.task-author, .task-dates { margin: .35rem 0; }
+.task-dates { display: flex; gap: 1.5rem; flex-wrap: wrap; }
+.task-dates > div { display: flex; gap: .4rem; }
+.task-dates dt { flex: none; color: #111; font-weight: 700; }
+.task-dates dd { margin: 0; }
+.badge-kind { background: transparent; padding: 0; font-weight: 800; color: #111; }
+.task-checklist { list-style: none; padding: 0; margin: .75rem 0; }
+.task-checklist li { margin: 0; border: 0; padding: .2rem 0; }
+.task-checklist form { margin: 0; }
+.check-button { display: flex; align-items: center; gap: .65rem; width: 100%; min-height: 38px; padding: .2rem 0; border: 0; background: transparent; color: #111; text-align: left; }
+.check-box { display: inline-grid; place-items: center; width: 30px; height: 30px; border: 2px solid #111; border-radius: 10px; background: #fff; font-weight: 800; }
+.check-box.is-checked { background: var(--kp11-purple); color: #fff; border-color: var(--kp11-purple); }
+.task-actions { display: flex; flex-wrap: wrap; gap: .6rem; margin-top: .9rem; }
+.task-actions form { margin: 0; }
+.task-actions .button, .task-actions button { min-height: 40px; padding: .45rem 1.1rem; border-radius: 11px; }
+.task-actions .secondary, .task-actions button.secondary { background: #fff; color: var(--kp11-purple); border-color: var(--kp11-purple); }
+.empty-state { background: var(--kp11-lavender); border: 0; }
+.profile-page { max-width: 52rem; margin: 2rem auto; background: var(--kp11-lavender); border: 0; }
+@media (max-width: 700px) { .header-inner { min-height: 0; padding: 1rem; } main { padding: 0 1rem; } .interface-filters { grid-template-columns: 1fr; } .task-tabs .tab-action { margin-left: 0; } }

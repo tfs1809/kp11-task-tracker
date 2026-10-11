@@ -6,6 +6,7 @@ from django.utils import timezone
 from apps.access.policies import require_active_actor
 from apps.audiences.models import Membership
 from apps.workitems.selectors import readable_items
+from apps.workitems.state import event_chat_locked
 
 from .models import EventMessage
 from .policies import can_close, can_moderate, can_read_original, can_send
@@ -47,7 +48,8 @@ def serialize(rows, item):
 
 
 def state(actor, item):
-    return dict(closed=bool(item.chat_closed_at), archived=bool(item.archived_at), can_send=can_send(actor, item), can_moderate=can_moderate(actor, item), can_close=can_close(actor, item), can_original=can_read_original(actor), version=item.version)
+    locked = event_chat_locked(item)
+    return dict(closed=bool(item.chat_closed_at), time_locked=locked, archived=bool(item.archived_at), can_send=can_send(actor, item), can_moderate=can_moderate(actor, item), can_close=can_close(actor, item), can_original=can_read_original(actor), version=item.version)
 
 
 def history(actor, item_id, before=None):

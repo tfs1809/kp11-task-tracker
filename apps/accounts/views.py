@@ -19,6 +19,8 @@ from .forms import ChangePasswordForm, EmployeeForm, GroupForm, InvitationForm, 
 from .limits import RateLimited, login_limits, recovery_limits
 from .models import User
 from .selectors import administration_overview
+from apps.access.selectors import own_profile
+from apps.accounts.selectors import own_access
 from .services import activate_employee, change_password, invite_employee, login_employee, logout_employee, request_recovery, resend_invitation, reset_password, valid_invitation, valid_reset
 
 
@@ -137,6 +139,11 @@ def password_change_view(request):
         if status == 200:
             return form_page(request, None, "Пароль изменен", message="Пароль изменен. Остальные сессии отозваны.")
     return form_page(request, form, "Изменение пароля", status=status, password_help=True)
+
+
+@require_http_methods(["GET"])
+def profile_view(request):
+    return render(request, "accounts/profile.html", {"profile": own_profile(request.user), **own_access(request.user)})
 
 
 @require_http_methods(["GET"])

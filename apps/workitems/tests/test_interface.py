@@ -1,4 +1,6 @@
 import uuid
+from datetime import timedelta
+from django.core.exceptions import PermissionDenied
 from django.test import TestCase
 from django.utils import timezone
 
@@ -6,6 +8,7 @@ from apps.accounts.tests.test_stage2 import employee
 from apps.workitems.tests.test_issuance import IssuanceFixture
 from apps.workitems.models import Assignment, WorkItem
 from apps.workitems import workflow
+from apps.discussions import selectors as chat_selectors, services as chat_services
 
 
 class InterfaceTests(IssuanceFixture, TestCase):
@@ -44,6 +47,36 @@ class InterfaceTests(IssuanceFixture, TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertNotContains(response, self.admin.full_name, status_code=400)
         self.assertFalse(response.context['assignments'])
+
+    def test_search_and_event_sort_use_interface_fields(self):
+        response = self.client.get('/?search=Дальнее')
+        self.assertEqual([row.work_item_id for row in response.context['assignments']], [self.event.pk])
+        self.event.due_at = timezone.now() + timedelta(days=30)
+        self.event.event_at = timezone.now() + timedelta(days=1)
+        self.event.save(update_fields=['due_at', 'event_at'])
+        response = self.client.get('/?kind=event&sort=due')
+        self.assertEqual([row.work_item_id for row in response.context['assignments']], [self.event.pk])
+
+    def test_event_expires_lazily_and_cannot_be_restored(self):
+        self.event.event_at = timezone.now() - timedelta(days=1, minutes=1)
+        self.event.save(update_fields=['event_at'])
+        self.assertFalse(self.client.get('/?kind=event').context['assignments'])
+        response = self.client.get('/?tab=completed&kind=event')
+        self.assertContains(response, 'Чат')
+        self.assertNotContains(response, 'Вернуть')
+        assignment = self.event.assignments.get(user=self.recipient)
+        with self.assertRaises(PermissionDenied):
+            chat_services.send(actor_id=self.recipient.pk, auth_version=self.recipient.auth_version, item_id=self.event.pk, request_key=uuid.uuid4(), text='После блокировки')
+        self.assertTrue(chat_selectors.history(self.recipient, self.event.pk)['state']['time_locked'])
+
+    def test_author_executor_is_not_duplicated_in_issued_list(self):
+        self.manager.invited_at = timezone.now()
+        self.manager.save(update_fields=['invited_at'])
+        item, _ = self.issue(request_key=uuid.uuid4(), payload={**self.payload, 'users': [str(self.manager.pk)], 'roles': [], 'groups': []})
+        self.login(self.manager)
+        response = self.client.get('/workitems/issued/')
+        self.assertNotContains(response, item.title)
+        self.assertContains(self.client.get('/'), item.title)
 
     def test_tabs_completion_return_and_filter_preservation(self):
         self.finish(self.event)

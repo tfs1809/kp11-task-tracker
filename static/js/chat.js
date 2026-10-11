@@ -19,7 +19,7 @@
   };
   const applyState = state => {
     permissions = state;
-    status.textContent = state.archived ? 'Архив — только чтение' : state.closed ? 'Чат закрыт — только чтение' : 'Чат открыт';
+    status.textContent = state.archived ? 'Архив — только чтение' : state.time_locked ? 'Чат доступен только для чтения' : state.closed ? 'Чат закрыт — только чтение' : 'Чат открыт';
     document.getElementById('chat-compose').hidden = !state.can_send;
     const close = document.getElementById('chat-close');
     if (close) {

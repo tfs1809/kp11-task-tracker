@@ -1,1 +1,3 @@
-<form method="get" class="filters" aria-label="Фильтры заданий">{% if tab %}<input type="hidden" name="tab" value="{{ tab }}">{% endif %}{% include 'shared/form.html' with form=filters %}<div class="actions"><button type="submit">Применить</button><a href="{{ request.path }}{% if tab %}?tab={{ tab }}{% endif %}">Сбросить фильтры</a></div></form>
+<form method="get" class="filters interface-filters" aria-label="Фильтры заданий">{% if tab %}<input type="hidden" name="tab" value="{{ tab }}">{% endif %}
+{% for field in filters %}{% if not personal or field.name != 'author' %}<div class="form-field filter-field">{{ field.as_field_group }}</div>{% endif %}{% endfor %}
+<div class="actions"><button type="submit">Применить</button><a href="{{ request.path }}{% if tab %}?tab={{ tab }}{% endif %}">Сбросить фильтры</a></div>{% if filters.errors %}<div class="error-summary" role="alert">{{ filters.errors }}</div>{% endif %}</form>

@@ -15,6 +15,7 @@ from .models import Assignment, AssignmentSource, AudienceSelection, AudienceSel
 from .policies import can_edit, can_manage_assignees
 from .selectors import readable_items
 from .services import canonical_payload, resolve_recipients
+from .state import assignment_completed, event_auto_completed
 
 SALT = 'workitems.workflow.preview.v1'
 
@@ -66,7 +67,7 @@ def set_mark(*, actor_id, auth_version, assignment_id, subtask_id, expected_vers
         assignment = own_assignment(actor, assignment_id)
         check_version(assignment.work_item, expected_item_version)
         check_version(assignment, expected_version)
-        if assignment.completed_at:
+        if assignment_completed(assignment):
             raise ValidationError('Сначала верните выполненное назначение.')
         subtask = get_object_or_404(Subtask, pk=subtask_id, work_item_id=assignment.work_item_id, deleted_at__isnull=True)
         progress = get_object_or_404(SubtaskProgress, assignment=assignment, subtask=subtask)
@@ -91,8 +92,11 @@ def set_completion(*, actor_id, auth_version, assignment_id, expected_version, e
         assignment = own_assignment(actor, assignment_id)
         check_version(assignment.work_item, expected_item_version)
         check_version(assignment, expected_version)
-        if (assignment.completed_at is not None) == completed:
+        effective_completed = assignment_completed(assignment)
+        if effective_completed == completed:
             return assignment
+        if not completed and event_auto_completed(assignment.work_item):
+            raise ValidationError('Событие нельзя вернуть после блокировки чата.')
         if completed and not all_checked(assignment, current_subtasks(assignment.work_item)):
             raise ValidationError('Отметьте все текущие подзадачи.')
         previous = assignment.completed_at.isoformat() if assignment.completed_at else None
