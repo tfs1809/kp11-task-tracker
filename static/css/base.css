@@ -80,3 +80,73 @@ main { width: min(100%, 116rem); margin: 0 auto 3rem; padding: 0 2rem; }
 .remove-subtask { flex: 0 0 auto; background: #fff; color: var(--kp11-purple); border-color: var(--kp11-purple); }
 @media (max-width: 700px) { .header-inner { min-height: 0; padding: 1rem; } main { padding: 0 1rem; } .interface-filters { grid-template-columns: 1fr; } .task-tabs .tab-action { margin-left: 0; } }
 @media (max-width: 600px) { .form-grid { grid-template-columns: 1fr; } .subtask-row { align-items: stretch; flex-direction: column; } .subtask-row button { align-self: flex-start; } }
+
+/* Pixel-aligned task board from the approved КП11 layout. */
+:root { --kp11-purple: #2500c8; --kp11-lavender: #dcdcfb; --kp11-overdue: #faaba8; --kp11-ink: #111; }
+body { font-family: Arial, Helvetica, sans-serif; background: #fff; color: var(--kp11-ink); }
+.site-header { background: #fff; border-bottom: 0; }
+.header-inner { width: min(100%, 1920px); max-width: none; min-height: 0; margin: 0 auto; padding: 2rem 4rem 0; display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: 2rem; align-items: start; }
+.brand { padding: .5rem 0; color: var(--kp11-purple); font-size: 1.35rem; font-weight: 400; text-transform: uppercase; white-space: nowrap; }
+.site-header nav { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1rem; align-items: stretch; }
+.site-header nav a, .site-header .nav-logout { min-height: 49px; padding: .55rem 1rem; border: 2px solid var(--kp11-purple); border-radius: 12px 12px 0 0; color: var(--kp11-purple); background: #fff; display: flex; align-items: center; justify-content: center; text-align: center; font-size: 1.25rem; font-weight: 400; text-decoration: none; white-space: nowrap; }
+.site-header nav a[aria-current="page"] { color: #fff; background: var(--kp11-purple); text-decoration: none; }
+.nav-logout-form { display: contents; }
+.site-header .nav-logout { width: 100%; font-family: inherit; cursor: pointer; }
+.site-header .nav-logout:hover, .site-header nav a:hover { background: var(--kp11-purple); color: #fff; }
+.login-link { align-self: start; justify-self: end; padding: .5rem 1rem; color: var(--kp11-purple); }
+main { width: min(100%, 1920px); max-width: none; margin: 0 auto 3rem; padding: 0 4rem; }
+.dashboard-shell { width: min(100%, 832px); max-width: 832px; margin: 2.6rem auto 0; }
+.dashboard-shell > .page-heading { display: none; }
+.issued-shell > .page-heading { display: flex; }
+.task-tabs { width: 100%; margin: 0 0 1rem; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .75rem; border: 0; }
+.task-tabs a { min-height: 48px; padding: .55rem .75rem; border: 2px solid var(--kp11-purple); border-radius: 12px 12px 0 0; color: var(--kp11-purple); background: #fff; display: flex; justify-content: center; align-items: center; text-align: center; font-size: 1.25rem; font-weight: 400; }
+.task-tabs a[aria-current="page"] { color: #fff; background: var(--kp11-purple); border-color: var(--kp11-purple); }
+.task-tabs .tab-action { margin-left: 0; }
+.interface-filters { display: grid; grid-template-columns: minmax(0, 1.8fr) repeat(3, minmax(0, 1fr)); gap: .75rem; padding: 0; margin-bottom: 1rem; border: 0; background: transparent; align-items: stretch; }
+.interface-filters .form-field { min-width: 0; margin: 0; }
+.interface-filters input, .interface-filters select { min-height: 48px; border: 0; border-radius: 12px; background: var(--kp11-lavender); color: var(--kp11-purple); padding: .65rem 1rem; font-size: 1.12rem; }
+.interface-filters input::placeholder { color: var(--kp11-purple); opacity: 1; }
+.interface-filters select { appearance: auto; }
+.interface-filters .actions { display: none; }
+.task-list { display: grid; gap: 1rem; }
+.interface-card { min-height: 190px; padding: .75rem; border: 0; border-radius: 14px; background: var(--kp11-lavender); display: grid; grid-template-columns: minmax(0, 1fr) 160px; gap: .75rem; }
+.interface-card.task-card--event { grid-template-columns: minmax(0, 1fr) 160px 160px; }
+.interface-card.task-card--overdue { background: var(--kp11-overdue); }
+.task-main, .task-side { min-width: 0; background: #fff; border-radius: 12px; padding: .8rem 1rem; }
+.task-main { display: flex; flex-direction: column; }
+.interface-card h2 { margin: .05rem 0 .55rem; font-size: 1.25rem; font-weight: 400; line-height: 1.2; }
+.interface-card h2 a { color: var(--kp11-purple); min-height: 0; padding: 0; font-weight: 400; text-decoration: none; }
+.interface-card .task-description { margin: 0; font-size: 1rem; }
+.task-author { margin-top: auto; margin-bottom: 0; color: var(--kp11-purple); font-size: .95rem; text-transform: uppercase; }
+.task-dates { margin: .35rem 0; }
+.task-side { display: flex; flex-direction: column; align-items: center; justify-content: space-between; gap: .7rem; text-align: center; font-size: 1.1rem; }
+.task-side strong { font-weight: 400; white-space: pre-line; }
+.task-side .button, .task-side button { width: 100%; min-height: 42px; padding: .45rem .5rem; border-radius: 12px; font-size: 1.05rem; }
+.task-side--event { border-left: 0; }
+.task-checklist { margin: .35rem 0; }
+.check-button { min-height: 34px; gap: .6rem; padding: .1rem 0; font-size: .98rem; }
+.check-box { width: 31px; height: 31px; border: 2px solid var(--kp11-purple); border-radius: 10px; color: #fff; }
+.check-box.is-checked { background: var(--kp11-purple); border-color: var(--kp11-purple); }
+.badge-kind { color: var(--kp11-purple); }
+.card-meta { min-height: 0; }
+.profile-page, .issue-card, .detail-card { max-width: 832px; margin: 2.5rem auto; background: var(--kp11-lavender); border: 0; border-radius: 14px; }
+.profile-page h1, .issue-card h1, .detail-card h1 { color: var(--kp11-purple); font-weight: 400; }
+.profile-email { color: var(--kp11-purple); font-size: 1.1rem; }
+.profile-roles { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
+.profile-role { padding: .3rem .7rem; border-radius: 999px; background: #fff; color: var(--kp11-purple); }
+.profile-actions { display: flex; flex-wrap: wrap; gap: .75rem; margin-top: 1.5rem; }
+.status-dot { display: inline-block; width: .7rem; height: .7rem; border-radius: 50%; background: #2f9d54; }
+.detail-subtasks { list-style: none; padding: 0; }
+.detail-subtasks li { padding: .5rem .75rem; background: #fff; border-radius: 10px; }
+footer { color: var(--kp11-purple); }
+.admin-page { width: min(100%, 1100px); margin: 2.5rem auto; background: var(--kp11-lavender); border: 0; border-radius: 14px; }
+.admin-page table { width: 100%; background: #fff; border-radius: 12px; border-collapse: collapse; overflow: hidden; }
+.admin-page th, .admin-page td { padding: .75rem; text-align: left; border-bottom: 1px solid var(--kp11-lavender); }
+.chat-page { width: min(100%, 832px); margin: 2.5rem auto; background: var(--kp11-lavender); border: 0; border-radius: 14px; }
+.chat-state { color: var(--kp11-purple); font-weight: 700; }
+main > .card:not(.interface-card) { max-width: 832px; margin: 2.5rem auto; border: 0; border-radius: 14px; background: var(--kp11-lavender); }
+main > .card:not(.interface-card) h1 { color: var(--kp11-purple); font-weight: 400; }
+main > .card:not(.interface-card) input:not([type=checkbox]):not([type=hidden]), main > .card:not(.interface-card) select, main > .card:not(.interface-card) textarea { background: #fff; border-color: var(--kp11-purple); }
+@media (max-width: 1050px) { .header-inner { padding-left: 2rem; padding-right: 2rem; grid-template-columns: 170px minmax(0, 1fr); gap: 1rem; } .brand { font-size: 1.05rem; } .site-header nav a, .site-header .nav-logout { font-size: 1rem; } main { padding: 0 2rem; } }
+@media (max-width: 760px) { .header-inner { display: block; padding: 1rem; } .brand { display: block; margin-bottom: .75rem; } .site-header nav { grid-template-columns: repeat(2, minmax(0, 1fr)); } main { padding: 0 1rem; } .dashboard-shell { margin-top: 1.5rem; } .interface-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); } .interface-card, .interface-card.task-card--event { grid-template-columns: minmax(0, 1fr); } .task-side { min-height: 115px; } }
+@media (max-width: 480px) { .task-tabs, .interface-filters { grid-template-columns: 1fr; } .interface-filters .form-field:first-child { grid-column: auto; } }

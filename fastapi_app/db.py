@@ -165,6 +165,14 @@ def ensure_runtime_schema():
                 ("manager", "Руководитель", False),
                 ("teacher", "Преподаватель", False),
             )
+            role_permissions = {
+                "curator": {"discussions.send_accessible"},
+                "teacher": {"discussions.send_accessible"},
+                "manager": {
+                    "workitems.create", "workitems.view_own", "workitems.edit_own",
+                    "workitems.manage_own_assignees", "discussions.send_accessible",
+                },
+            }
             for key, name, system_admin in roles:
                 role = one(conn, "SELECT id FROM access_role WHERE key=%s", (key,))
                 if not role:
@@ -175,6 +183,9 @@ def ensure_runtime_schema():
                     role_id = role["id"]
                 if system_admin:
                     for code, _, _ in PERMISSIONS:
+                        conn.execute("INSERT INTO access_rolepermission(permission_id,role_id) VALUES (%s,%s) ON CONFLICT DO NOTHING", (code, role_id))
+                else:
+                    for code in role_permissions[key]:
                         conn.execute("INSERT INTO access_rolepermission(permission_id,role_id) VALUES (%s,%s) ON CONFLICT DO NOTHING", (code, role_id))
             conn.execute("GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO kp11_app")
             conn.execute("GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO kp11_app")

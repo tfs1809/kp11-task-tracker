@@ -1,4 +1,7 @@
 (() => {
+  document.querySelectorAll('.interface-filters select').forEach(select => {
+    select.addEventListener('change', () => select.form?.requestSubmit());
+  });
   const container = document.querySelector('[data-subtasks]');
   const add = document.querySelector('[data-add-subtask]');
   if (!container || !add) return;

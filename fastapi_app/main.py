@@ -45,10 +45,30 @@ def _user(request):
 def _page(template, request, **values):
     user = _user(request)
     is_admin = False
+    permission_set = set()
     if user:
         with connection() as conn:
             is_admin = has_permission(conn, user["id"], "accounts.manage_users")
-    return HTMLResponse(render(template, user=user, csrf=_csrf(request), is_admin=is_admin, **values))
+            permission_set = {
+                code for code in (
+                    "workitems.create", "workitems.view_own", "workitems.edit_own",
+                    "workitems.manage_own_assignees", "workitems.view_all", "workitems.edit_all",
+                    "accounts.manage_users", "access.manage_roles", "audiences.manage_groups",
+                    "audit.view",
+                ) if has_permission(conn, user["id"], code)
+            }
+    return HTMLResponse(
+        render(
+            template,
+            user=user,
+            csrf=_csrf(request),
+            is_admin=is_admin,
+            permissions=permission_set,
+            can_create="workitems.create" in permission_set,
+            can_issue=bool(permission_set.intersection({"workitems.view_own", "workitems.view_all", "workitems.create"})),
+            **values,
+        )
+    )
 
 
 def _require_user(request):
@@ -63,7 +83,23 @@ def _anonymous_csrf_valid(request, supplied):
 
 
 def _can_read_item(conn, item_id, user_id):
-    return one(conn, "SELECT 1 FROM workitems_workitem w WHERE w.id=%s AND (w.author_id=%s OR EXISTS (SELECT 1 FROM workitems_assignment a WHERE a.work_item_id=w.id AND a.user_id=%s AND a.state='active'))", (item_id, user_id, user_id)) is not None
+    return one(conn, """
+        SELECT 1 FROM workitems_workitem w
+        WHERE w.id=%s AND (
+            w.author_id=%s
+            OR EXISTS (SELECT 1 FROM workitems_assignment a WHERE a.work_item_id=w.id AND a.user_id=%s AND a.state='active')
+        )
+    """, (item_id, user_id, user_id)) is not None or has_permission(conn, user_id, "workitems.view_all")
+
+
+def _can_send_item(conn, item_id, user_id):
+    return one(conn, """
+        SELECT 1 FROM workitems_workitem w
+        WHERE w.id=%s AND (
+            w.author_id=%s
+            OR EXISTS (SELECT 1 FROM workitems_assignment a WHERE a.work_item_id=w.id AND a.user_id=%s AND a.state='active')
+        )
+    """, (item_id, user_id, user_id)) is not None or has_permission(conn, user_id, "discussions.send_accessible")
 
 
 def _redirect_login(request):
@@ -90,7 +126,7 @@ def _local_datetime(value):
     return parsed
 
 
-def _assignments(user_id, completed=False, *, search="", kind="all", sort="asc"):
+def _assignments(user_id, completed=False, *, search="", kind="all", author="all", sort="asc"):
     with connection() as conn:
         clauses = [
             "a.user_id=%s", "a.state='active'", "w.archived_at IS NULL",
@@ -103,6 +139,13 @@ def _assignments(user_id, completed=False, *, search="", kind="all", sort="asc")
         if kind in {"task", "event"}:
             clauses.append("w.kind=%s")
             params.append(kind)
+        try:
+            author_id = UUID(author) if author != "all" else None
+        except ValueError:
+            author_id = None
+        if author_id:
+            clauses.append("w.author_id=%s")
+            params.append(author_id)
         ordering = "DESC" if sort == "desc" else "ASC"
         rows = many(
             conn,
@@ -400,19 +443,40 @@ async def home(request: Request):
     sort = request.query_params.get("sort", "asc")
     if sort not in {"asc", "desc"}:
         sort = "asc"
-    rows = _assignments(user["id"], completed, search=search, kind=kind, sort=sort)
+    author = request.query_params.get("author", "all")
+    try:
+        UUID(author) if author != "all" else None
+    except ValueError:
+        author = "all"
+    rows = _assignments(user["id"], completed, search=search, kind=kind, author=author, sort=sort)
+    with connection() as conn:
+        authors = many(conn, """
+            SELECT DISTINCT u.id,u.full_name
+            FROM workitems_assignment a
+            JOIN workitems_workitem w ON w.id=a.work_item_id
+            JOIN accounts_user u ON u.id=w.author_id
+            WHERE a.user_id=%s AND a.state='active' AND w.archived_at IS NULL
+            ORDER BY u.full_name
+        """, (user["id"],))
     return _page(
         "home.html", request, active="home", tab="completed" if completed else "assigned",
-        assignments=rows, search=search, kind=kind, sort=sort,
+        assignments=rows, search=search, kind=kind, author=author, authors=authors, sort=sort,
         counts={"active": len(_assignments(user["id"], False)), "completed": len(_assignments(user["id"], True))},
     )
 
 
 @app.get("/accounts/profile/", response_class=HTMLResponse)
 async def profile(request: Request):
-    if not _require_user(request):
+    user = _require_user(request)
+    if not user:
         return _redirect_login(request)
-    return _page("profile.html", request, active="profile")
+    with connection() as conn:
+        roles = many(conn, """
+            SELECT r.name FROM access_userrole ur
+            JOIN access_role r ON r.id=ur.role_id
+            WHERE ur.user_id=%s AND r.is_active ORDER BY r.name
+        """, (user["id"],))
+    return _page("profile.html", request, active="profile", roles=roles)
 
 
 @app.get("/workitems/{item_id}/", response_class=HTMLResponse)
@@ -421,7 +485,9 @@ async def detail(request: Request, item_id: UUID):
     if not user:
         return _redirect_login(request)
     with connection() as conn:
-        item = one(conn, "SELECT w.*,u.full_name author_name FROM workitems_workitem w JOIN accounts_user u ON u.id=w.author_id WHERE w.id=%s AND (w.author_id=%s OR EXISTS (SELECT 1 FROM workitems_assignment a WHERE a.work_item_id=w.id AND a.user_id=%s AND a.state='active'))", (item_id, user["id"], user["id"]))
+        item = one(conn, "SELECT w.*,u.full_name author_name FROM workitems_workitem w JOIN accounts_user u ON u.id=w.author_id WHERE w.id=%s", (item_id,))
+        if item and not _can_read_item(conn, item_id, user["id"]):
+            item = None
         subtasks = many(conn, "SELECT id,text FROM workitems_subtask WHERE work_item_id=%s AND deleted_at IS NULL ORDER BY position,id", (item_id,)) if item else []
     if not item:
         return PlainTextResponse("Not found\n", status_code=404)
@@ -438,12 +504,14 @@ async def chat(request: Request, item_id: UUID):
     if not user:
         return _redirect_login(request)
     with connection() as conn:
-        item = one(conn, "SELECT w.*,u.full_name author_name FROM workitems_workitem w JOIN accounts_user u ON u.id=w.author_id WHERE w.id=%s AND w.kind='event' AND (w.author_id=%s OR EXISTS (SELECT 1 FROM workitems_assignment a WHERE a.work_item_id=w.id AND a.user_id=%s AND a.state='active'))", (item_id, user["id"], user["id"]))
+        item = one(conn, "SELECT w.*,u.full_name author_name FROM workitems_workitem w JOIN accounts_user u ON u.id=w.author_id WHERE w.id=%s AND w.kind='event'", (item_id,))
+        if item and not _can_read_item(conn, item_id, user["id"]):
+            item = None
         messages = many(conn, "SELECT m.id,m.text,m.created_at,u.full_name author_name FROM discussions_eventmessage m JOIN accounts_user u ON u.id=m.author_id WHERE m.work_item_id=%s ORDER BY m.id", (item_id,)) if item else []
+        can_send = bool(item and _can_send_item(conn, item_id, user["id"]) and (not item["event_at"] or item["event_at"] + timedelta(days=1) >= datetime.now(timezone.utc)))
     if not item:
         return PlainTextResponse("Not found\n", status_code=404)
     item["kind_label"] = "Событие"
-    can_send = not item["event_at"] or item["event_at"] + timedelta(days=1) >= datetime.now(timezone.utc)
     return _page("chat.html", request, item=item, messages=messages, can_send=can_send)
 
 
@@ -460,7 +528,7 @@ async def send_message(request: Request, item_id: UUID):
     if not 1 <= len(text) <= 4000:
         return PlainTextResponse("Некорректное сообщение\n", status_code=400)
     with transaction() as conn:
-        if not _can_read_item(conn, item_id, user["id"]):
+        if not _can_send_item(conn, item_id, user["id"]):
             return PlainTextResponse("Not found\n", status_code=404)
         event = one(conn, "SELECT kind,event_at FROM workitems_workitem WHERE id=%s", (item_id,))
         if not event or event["kind"] != "event" or (event["event_at"] and event["event_at"] + timedelta(days=1) < datetime.now(timezone.utc)):
@@ -476,6 +544,9 @@ async def issued(request: Request):
     user = _require_user(request)
     if not user:
         return _redirect_login(request)
+    with connection() as conn:
+        if not (has_permission(conn, user["id"], "workitems.view_own") or has_permission(conn, user["id"], "workitems.view_all")):
+            return PlainTextResponse("Forbidden\n", status_code=403)
     search = request.query_params.get("q", "").strip()[:120]
     kind = request.query_params.get("kind", "all")
     if kind not in {"all", "task", "event"}:
@@ -518,6 +589,8 @@ async def issue_page(request: Request):
     if not user:
         return _redirect_login(request)
     with connection() as conn:
+        if not has_permission(conn, user["id"], "workitems.create"):
+            return PlainTextResponse("Forbidden\n", status_code=403)
         assignees = many(conn, "SELECT id,full_name,email FROM accounts_user WHERE is_active AND email_verified_at IS NOT NULL ORDER BY full_name,email")
     return _page("issue.html", request, values={"kind": "task"}, assignees=assignees, current_user_id=str(user["id"]))
 

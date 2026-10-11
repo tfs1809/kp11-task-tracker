@@ -1,1 +1,4 @@
-{% extends 'base.html' %}{% block content %}<section class="card"><p class="eyebrow">Профиль</p><h1>{{ user.full_name }}</h1><p>{{ user.email }}</p><p>Учетная запись активна.</p><p><a href="/accounts/password/">Изменить пароль</a></p></section>{% endblock %}
+{% extends 'base.html' %}
+{% block content %}
+<section class="card profile-page"><p class="eyebrow">Профиль сотрудника</p><h1>{{ user.full_name }}</h1><p class="profile-email">{{ user.email }}</p><p><span class="status-dot"></span> Учетная запись активна</p>{% if roles %}<p class="profile-roles"><strong>Роли:</strong> {% for role in roles %}<span class="profile-role">{{ role.name }}</span>{% endfor %}</p>{% endif %}<div class="profile-actions"><a class="button" href="/accounts/password/">Изменить пароль</a>{% if is_admin %}<a class="button secondary" href="/accounts/administration/">Администрирование</a>{% endif %}</div></section>
+{% endblock %}
