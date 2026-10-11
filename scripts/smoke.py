@@ -35,7 +35,7 @@ subprocess.run(compose + ["exec", "-T", "web", "python", "scripts/check_health.p
 print("HTTP: redirect/login, русский HTML, CSS, no-store, private health и DB readiness — OK")
 
 marker = uuid.uuid4().hex
-subprocess.run(compose + ["exec", "-T", "web", "python", "manage.py", "send_test_email", "--marker", marker], cwd=root, check=True)
+subprocess.run(compose + ["exec", "-T", "web", "python", "scripts/send_test_email.py", "--marker", marker], cwd=root, check=True)
 subject = f"KP11: проверка среды [{marker}]"
 message = None
 for attempt in range(5):
@@ -48,5 +48,5 @@ for attempt in range(5):
 assert message is not None, "Письмо именно текущей проверки отсутствует в Mailpit."
 with urllib.request.urlopen(mailpit + "/api/v1/message/" + message["ID"], timeout=5) as response:
     detail = json.load(response)
-assert "Django доставил тестовое письмо через SMTP." in detail["Text"]
+assert "FastAPI доставил тестовое письмо через SMTP." in detail["Text"]
 print("SMTP: новое письмо текущей проверки получено Mailpit; текст совпал — OK")

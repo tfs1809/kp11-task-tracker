@@ -1,7 +1,0 @@
-{% load static %}
-<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>{% block title %}Трек задач КП11{% endblock %}</title><link rel="stylesheet" href="{% static 'css/base.css' %}"><script src="{% static 'js/forms.js' %}" defer></script></head>
-<body><a class="skip-link" href="#main">Перейти к содержимому</a>
-<header class="site-header"><div class="header-inner"><a class="brand" href="{% url 'home' %}">Трек задач КП11</a>
-{% if request.user.is_authenticated %}<nav aria-label="Основная навигация"><a href="{% url 'home' %}" {% if request.resolver_match.url_name == 'home' %}aria-current="page"{% endif %}>Мои задачи</a>{% if can_view_issued %}<a href="{% url 'workitems_issued' %}" {% if request.resolver_match.url_name == 'workitems_issued' %}aria-current="page"{% endif %}>Выдано мной</a>{% endif %}<a href="{% url 'profile' %}" {% if request.resolver_match.url_name == 'profile' %}aria-current="page"{% endif %}>Профиль</a>{% if can_administer %}<a href="{% url 'administration' %}">Администрирование</a>{% endif %}</nav>
-<div class="account-actions"><form method="post" action="{% url 'logout' %}">{% csrf_token %}<button class="nav-logout" type="submit">Выход</button></form></div>{% else %}<a href="{% url 'login' %}">Вход</a>{% endif %}</div></header>
-<main id="main" tabindex="-1">{% block content %}{% endblock %}</main><footer>Время указано по Москве · Доступ только для сотрудников</footer></body></html>

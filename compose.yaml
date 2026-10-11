@@ -1,15 +1,14 @@
 name: kp11-task-tracker
 
 x-environment: &environment
-  DJANGO_SETTINGS_MODULE: config.settings.development
-  DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?Run python3 scripts/init_dev_env.py}
+  APP_SECRET_KEY: ${APP_SECRET_KEY:?Run python3 scripts/init_dev_env.py}
   HEALTHCHECK_TOKEN: ${HEALTHCHECK_TOKEN:?Run python3 scripts/init_dev_env.py}
   POSTGRES_DB: ${POSTGRES_DB:-kp11}
   DB_HOST: db
   DB_PORT: "5432"
   DB_APP_USER: ${DB_APP_USER:-kp11_app}
   DB_APP_PASSWORD: ${DB_APP_PASSWORD:?Run python3 scripts/init_dev_env.py}
-  DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1,web}
+  APP_ALLOWED_HOSTS: ${APP_ALLOWED_HOSTS:-localhost,127.0.0.1,web}
   EMAIL_HOST: mailpit
   EMAIL_PORT: "1025"
   DEFAULT_FROM_EMAIL: ${DEFAULT_FROM_EMAIL:-tracker@kp11.ru}
@@ -24,7 +23,6 @@ x-tool: &tool
       condition: service_healthy
   environment:
     <<: *environment
-    DJANGO_SETTINGS_MODULE: config.settings.migration
     DB_MIGRATOR_USER: ${DB_MIGRATOR_USER:-kp11_migrator}
     DB_MIGRATOR_PASSWORD: ${DB_MIGRATOR_PASSWORD:?Run python3 scripts/init_dev_env.py}
 
@@ -61,7 +59,7 @@ services:
     image: kp11-task-tracker:development
     build: .
     environment: *environment
-    command: [python, manage.py, runserver, "0.0.0.0:8000", --noreload]
+    command: [uvicorn, config.asgi:application, --host, 0.0.0.0, --port, "8000"]
     depends_on:
       db:
         condition: service_healthy
@@ -76,15 +74,14 @@ services:
     restart: unless-stopped
   migrate:
     <<: *tool
-    command: [python, manage.py, prepare_database]
+    command: [python, scripts/prepare_database.py]
   tests:
     <<: *tool
     environment:
       <<: *environment
-      DJANGO_SETTINGS_MODULE: config.settings.test
       DB_MIGRATOR_USER: ${DB_MIGRATOR_USER:-kp11_migrator}
       DB_MIGRATOR_PASSWORD: ${DB_MIGRATOR_PASSWORD:?Run python3 scripts/init_dev_env.py}
-    command: [python, manage.py, test, --noinput, --verbosity, "2"]
+    command: [python, -m, compileall, -q, fastapi_app, config]
 
 volumes:
   postgres_data:

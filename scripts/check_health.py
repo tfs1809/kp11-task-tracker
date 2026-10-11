@@ -5,7 +5,7 @@ request = urllib.request.Request(
     "http://127.0.0.1:8000/health/ready/",
     headers={
         "X-Healthcheck-Key": os.environ["HEALTHCHECK_TOKEN"],
-        "Host": os.environ.get("DJANGO_ALLOWED_HOSTS", "localhost").split(",")[0].strip().lstrip("."),
+        "Host": os.environ.get("APP_ALLOWED_HOSTS", "localhost").split(",")[0].strip().lstrip("."),
     },
 )
 with urllib.request.urlopen(request, timeout=3) as response:

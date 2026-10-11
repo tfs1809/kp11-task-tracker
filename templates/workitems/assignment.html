@@ -1,4 +1,0 @@
-{% extends 'base.html' %}{% block content %}<section class="card"><h1>{{ assignment.user.full_name }}: {{ item.title }}</h1>
-<p>Состояние: {{ assignment.get_state_display }}. {% if assignment.completed_at %}Выполнено {{ assignment.completed_at|date:'d.m.Y H:i' }}{% else %}Не выполнено{% endif %}</p>
-<ul>{% for row in assignment_progress %}<li>{{ row.subtask.text }} — {% if row.checked %}отмечено{% else %}не отмечено{% endif %}</li>{% empty %}<li>Без подзадач</li>{% endfor %}</ul>
-<a href="{% url 'workitem_detail' item_id=item.pk %}">Карточка задания</a></section>{% endblock %}
