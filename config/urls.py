@@ -6,6 +6,7 @@ urlpatterns = [
     path("", views.home, name="home"),
     path("", include("apps.accounts.urls")),
     path("", include("apps.workitems.urls")),
+    path("", include("apps.discussions.urls")),
     path("health/live/", views.liveness, name="liveness"),
     path("health/ready/", views.readiness, name="readiness"),
 ]

@@ -1,8 +1,68 @@
 # Состояние проекта
 
-Обновлено: 11.10.2026 01:11 Москва.
+Обновлено: 11.10.2026 01:36 Москва.
 
-Проектирование и этапы 1–4 приняты пользователем. Коммиты: **34b12bb**, **f34e6b1**, **d3854b7**, принятый этап 4 **ba89479** (`Implement personal progress, task revision and assignment lifecycle`), без push. **Этап 5 реализован полностью**, изменения оставлены в рабочем дереве для приемки. Этапы 6–7 не начинались. SPEC.md, принятая PERMISSIONS.md, схема/миграции, runtime-зависимости и digest базовых образов не изменены. Browser tooling имеет отдельный lock; .dockerignore исключает его venv из web-образа.
+Проектирование и этапы 1–5 приняты пользователем. Коммиты: **34b12bb**, **f34e6b1**, **d3854b7**, **ba89479**, принятый этап 5 **7b6f134** (`Implement responsive work item interface and browser validation`). **Этап 6 реализован полностью**; пользователь разрешил коммит и push всех изменений в origin/main 11.10.2026. Этап 7 не начинался. SPEC.md, принятая PERMISSIONS.md, runtime/browser lockfiles и digest базовых образов сохранены.
+
+## Реализовано в этапе 6
+
+- EventMessage для событий: bigint id, автор и серверное время, обычный текст 1–4000 символов, скрытие с обязательной причиной, FK last_change к append-only аудиту. Сообщения не редактируются/удаляются; нет вложений и почтовых уведомлений.
+- Серверные актуальные права во всех чтениях, POST и повторах: автор с текущим чтением и active исполнители участвуют, выполненное назначение сохраняет чат; view_all дает чтение, send_accessible и moderate — разные действия и не предоставляют чтения сами. Отзыв, снятие роли и деактивация закрывают соответствующее основание доступа.
+- MutationReceipt отправки с UUID/digest/результатом, конфликт другого ввода 409. Сообщение, receipt, аудит и расход DB-лимита атомарны. Повтор не создает дублей/аудита и не расходует лимит; после отзыва возвращает отказ, после скрытия — заглушку. При сохраненном чтении повтор после закрытия/архива читает прежний результат без новой записи.
+- PostgreSQL quotas для всех процессов: 10 сообщений/минутное окно на пользователя в событии, 30 суммарно по событиям; 429/Retry-After. Guard захватывается до chat bucket locks; auth/invitation bucket locks освобождаются до своего guard. Невозможность аудита откатывает действие и quota.
+- История по 50 с before_id, polling по отдельному курсору изменений, порции по 50 и watermark до последнего выданного изменения. Скрытие старого уже показанного сообщения обнаруживается; visible refresh ограничен событием и 50 ids на запрос. Все показанные ФИО/активные группы перечитываются порциями без нового сообщения. Email и чужой прогресс не выдаются.
+- Русская адаптивная страница чата, серверные POST формы и история без JS. JS отправляет/обновляет без полной перезагрузки, вставляет текст через textContent, обновляет права и закрытие/архив, polling 10 секунд на видимой вкладке, backoff до 60. Следующий polling 401/403/404 очищает чат и останавливает обновление; доставленный ранее текст сервер ретроспективно не отзывает.
+- Автор с edit_own / доступный edit_all закрывает чат по версии; повторное открытие запрещено. Закрытый чат читается и допускает модерацию, архив — только чтение. Новые отправки запрещены всем, включая администратора. Скрытый оригинал отсутствует в обычных HTML/JSON/аудите/логах; separate original page требует системного администратора + audit.view. Autoescape сохранен.
+- Миграции discussions 0001/0002 и workitems 0006. DB constraints/triggers защищают event-only, длину/причину, неизменяемость текста/автора/времени, необратимое скрытие/закрытие, audit change и согласованность message receipt. Runtime DELETE/TRUNCATE сообщений запрещены. Прежний populated migration test теперь восстанавливает все актуальные leaf migrations.
+
+## Реально выполненные проверки этапа 6
+
+Linux amd64, Python 3.12.15/Django 5.2.18/psycopg 3.3.6, PostgreSQL 17.11, Mailpit 1.31.4, Docker 28.4.0/Compose 2.40.3. Функциональные проверки выполнены на web image **sha256:8be42cf4879412fb9a517b0d99ed0580963dc7a7f0709dda05c6bb0f3f008630**. После них изменены документация и добавлен отдельно проверенный host-script smoke_chat_workers; код приложения не менялся.
+
+| Команда / проверка | Подтвержденный результат |
+| --- | --- |
+| Cloud build с BUILDX_CONFIG/compose.cloud.yaml | Exit 0; TLS и закрепленные hashes не отключались |
+| `docker compose run --rm migrate`, `docker compose up -d --wait web` | Exit 0; upgrade основной схемы (3 новые миграции) и runtime grants успешны; web/db/Mailpit healthy |
+| Два новых изолированных Compose projects | Все миграции с нуля, runtime grants/readiness успешны |
+| `docker compose run --rm tests` | **162 tests, 162 passed, 0 failures/errors/skipped**, **122.694 секунды**, exit 0; test_kp11 создана и удалена. 134 прежних + 28 новых chat tests |
+| PostgreSQL concurrency | Одновременные повторы (4 соединения): 1 сообщение/аудит; 12 соединений: 10 отправок/2 rate refusals. Send/revoke, send/close, hide/archive сериализованы; после commit отзыва/закрытия/архива запрещенная запись не проходит |
+| `scripts/browser_stage6.py --project kp11-stage6-browser-run1-20261011 --web-port 18210 --mailpit-port 18235` через .venv-browser | **8 tests, 8 passed, 0 failures/errors/skipped**, **177.277 секунды**, exit 0; настоящие страницы **360/1280 px**, Chromium **151.0.7922.173**, Playwright **1.62.0** |
+| Текущий stage6 browser JSON | run_id **b3674110-c963-4808-aeaf-2d501ac4ecc0** совпал с runner; **10 DOM/layout/contrast audits**, 44 экземпляра controls, 876 замеров текстового контраста; failures/duplicate ids/missing labels/overflow отсутствуют. 4 реальные SMTP-активации с корректными CSRF/Origin/Referer |
+| Browser chat cases | История 55 и следующие 52 fixtures: порции/старые страницы и новые обновления без пропусков; живой HTML/XSS показан текстом. Старое сообщение скрыто на открытой странице; текущая группа обновилась без нового сообщения. Completed assignment сохранил отправку. Moderator отдельно от отправителя/администратора, отдельный оригинал, close/archive, task 404, отзыв с очисткой страницы и повтором 404, no-JS отправка, retry 200, conflict 409, CSRF 403, quota 429 |
+| Fixtures больших histories | Созданы настоящим service с receipt/audit; consume_limits отключен только при подготовке 55/52 сообщений. Это не проверка 107 успешных пользовательских отправок сверх quota. Отдельные browser HTTP quota tests выполнялись без отключения лимита |
+| `python3 scripts/smoke_chat_workers.py --project kp11-stage6-browser-run1-20261011` | Exit 0, run_id **e3157b4a-c71c-408a-ba29-8cd2d44092d2**; два отдельных процесса (PID 483/490), каждый 5 отправок/1 отказ. БД: **10 messages, 10 receipts, 10 audit**. Окно времени одинаково фиксировано в обоих процессах, PostgreSQL quotas/locks настоящие |
+| Stage5 Chromium regression на новой схеме | `browser_stage5.py --project kp11-stage5-browser-stage6-regression --web-port 18250 --mailpit-port 18275 --artifacts test-results/stage6-stage5-regression`: **8/8**, 0 failures/errors/skipped, **35.097 секунды**, exit 0. run_id **0ded8516-acbd-4a35-ae74-46c954a3a914**, **46 DOM audits**, 340 controls/956 contrast samples; keyboard/focus/labels и no-JS прежних workflows прошли |
+| Секреты/оригиналы в server logs | Оба browser runners проверили отсутствие всех текущих случайных паролей/activation tokens/query links; stage6 также проверил скрытые оригиналы. Auth traces/HAR/video не создавались |
+| Browser screenshots | 4 screenshots stage6; просмотрен 360-no-js-chat. Это просмотр артефакта, не ручной проход человеком |
+| `check --database default`, `makemigrations --check --dry-run`, runtime `pip check` | Exit 0: 0 issues, No changes detected, No broken requirements |
+| `collectstatic --noinput` | Exit 0; CSS и оба JS скопированы (3 файла) |
+| `python3 scripts/smoke.py` | Exit 0: реальные login/русский HTML/CSS/no-store/private health/DB и новое matching SMTP-письмо Mailpit |
+| `scripts/check_production.py` | Exit 0; одно известное **security.W021**, HSTS preload выключен сознательно до внешней HTTPS-проверки. Только настройки с example hosts/SMTP, не production-запуск |
+| `environment_probe --marker stage1-persist --check-only` | Exit 0, прежний маркер сохранен |
+| Основная development БД | **0 Users, 0 WorkItems, 0 EventMessages** после проверок; synthetic fixtures только в отдельных projects |
+| EXPLAIN ANALYZE/BUFFERS | На маленькой изолированной истории history: backward PK index scan, около 0.063 ms; changes: seq scan/top-N sort, около 0.061 ms. Не production/load benchmark; составные индексы созданы |
+| compileall / Compose config / git diff --check | Exit 0; выполнялись на текущих Python-файлах и конфигурации |
+
+Серверные проверки дополнительно подтверждают пустой/длинный текст и UUID, scope чужих message ids, отказ обычному аудитору/модератору в оригинале, hidden text отсутствует в JSON/replay/audit, неизменяемость SQL, malformed cursors, page boundary, текущие группы, readonly архив, revoke/deactivate/revoke-role с открытой сессией, общую квоту 30 по разным событиям и полный rollback при отказе аудита. В обеих browser suites нет skipped tests; предварительные неуспешные запуски не подменяют финальные результаты.
+
+## Неуспешные запуски этапа 6
+
+- Первая генерация миграций host-venv остановилась на отсутствующем DJANGO_SECRET_KEY; bind mount с runtime UID 10001 не прочитал checkout. Миграции сгенерированы отдельным временным tool-container с --user root; runtime web остался UID 10001, .env не раскрывался/не изменялся.
+- Первый chat suite остановился при миграции на синтаксисе PL/pgSQL CASE: **0 тестов выполнено**. Добавлены скобки выражения CASE, миграции затем успешно применены с нуля и к прежней схеме.
+- Следующий chat suite: **27 tests, 1 failure, 1 error**, 27.725 s. Ошибки тестов: русский JSON проверялся как недекодированная строка, после деактивации использовалась устаревшая версия User. Исправлены decoded assertions и fresh User.
+- Третий chat suite: **27 tests, 1 error**, 27.399 s: после реактивации fixture User оставался is_active=False в памяти. Перечитан после обеих операций; финальные 162 tests включают этот отрицательный сценарий и проходят. Assertions не удалялись и лимиты не отключались ради quota tests.
+
+## Конфигурация среды и пределы проверки этапа 6
+
+Изолированные kp11-stage6-browser-run1-20261011 и kp11-stage5-browser-stage6-regression остановлены через down **без -v**. Их volumes сохранены; исходные .env/основные volumes сохранены. Пользователь разрешил коммит и push всех изменений, включая этап 6; разрешения на этап 7 нет. Точные команды запуска, browser/worker checks и ручной сценарий — [README.md](README.md).
+
+Reusable **start_skill сохранен**: принятый коммит этапа 5, текущие миграции/чат и отдельные stage6 browser/worker checks. Ответ configuration tool: **status=saved, requires_publish=true**. install_script, сеть и секреты не изменены. Сохранение draft не исполняет команды и не публикует snapshot; публикация остается действием пользователя в настройках среды. Новая cloud-задача/восстановление не проверялись.
+
+**Не выполнены:** ручной проход человеком, screen reader, другие браузеры/ОС, восстановление snapshot в новой cloud-задаче, внешние production HTTPS/proxy/SMTP/Gunicorn deployment, dump/restore, load/длительные outages/backoff. Наличие кода visibility/backoff и successful local tests не объявляется проверкой этих внешних/длительных условий. Для этапа 6 блокирующих проектных вопросов нет; внешние P1–P4 остаются для этапа 7.
+
+## История этапа 5 (принят, коммит 7b6f134)
+
+Далее сохранены фактические результаты на момент завершения этапа 5; их image/run_id относятся к прежнему коду. Текущие повторные проверки находятся выше.
 
 ## Реализовано в этапе 5
 

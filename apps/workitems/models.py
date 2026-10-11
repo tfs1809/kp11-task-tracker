@@ -137,10 +137,11 @@ class MutationReceipt(models.Model):
     request_key = models.UUIDField()
     payload_digest = models.CharField(max_length=64)
     work_item = models.ForeignKey(WorkItem, on_delete=models.PROTECT, related_name='+')
+    message = models.ForeignKey('discussions.EventMessage', null=True, blank=True, on_delete=models.PROTECT, related_name='+')
     created_at = models.DateTimeField(default=timezone.now)
 
     class Meta:
-        constraints = [models.UniqueConstraint(fields=['actor', 'operation', 'request_key'], name='receipt_unique_request')]
+        constraints = [models.UniqueConstraint(fields=['actor', 'operation', 'request_key'], name='receipt_unique_request'), models.CheckConstraint(condition=Q(operation='workitems.issue', message__isnull=True) | Q(operation='discussions.send', message__isnull=False), name='receipt_result_type')]
 
 
 class SubtaskProgress(models.Model):

@@ -5,7 +5,7 @@
 <p>{{ item.description|linebreaksbr }}</p>
 <p>Создано: {{ item.created_at|date:'d.m.Y H:i' }} (Москва)</p>
 <p>Срок: {{ item.due_at|date:'d.m.Y H:i:s' }} (Москва)</p>
-{% if item.event_at %}<p>Дата события: {{ item.event_at|date:'d.m.Y H:i' }} (Москва)</p>{% endif %}
+{% if item.event_at %}<p>Дата события: {{ item.event_at|date:'d.m.Y H:i' }} (Москва)</p><p><a href="{% url 'event_chat' item_id=item.pk %}">Чат события</a></p>{% endif %}
 {% if own_assignment %}
 <p>Назначено вам: {{ own_assignment.assigned_at|date:'d.m.Y H:i' }} (Москва)</p>
 {% if overdue %}<p class="notice">Просрочено. Выполнение остается доступным.</p>{% endif %}

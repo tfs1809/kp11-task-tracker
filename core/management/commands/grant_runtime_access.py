@@ -26,6 +26,9 @@ class Command(BaseCommand):
                 cursor.execute("SELECT to_regclass(%s)", [f"workitems_{table}"])
                 if cursor.fetchone()[0] is not None:
                     cursor.execute(f"REVOKE UPDATE, DELETE, TRUNCATE ON workitems_{table} FROM {quoted}")
+            cursor.execute("SELECT to_regclass('discussions_eventmessage')")
+            if cursor.fetchone()[0] is not None:
+                cursor.execute(f"REVOKE DELETE, TRUNCATE ON discussions_eventmessage FROM {quoted}")
             # Runtime не меняет структуру, права, аудит или историю миграций.
             cursor.execute(f"REVOKE CREATE ON SCHEMA public FROM {quoted}")
             cursor.execute(f"REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON django_migrations FROM {quoted}")

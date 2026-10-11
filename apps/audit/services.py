@@ -5,6 +5,9 @@ from .models import AuditEntry
 # Расширяется вместе с проверенными services следующих этапов.
 ALLOWED_CHANGES = {"environment.probe_created": {"marker"}}
 ALLOWED_CHANGES.update({
+    "discussions.sent": {"message_id"},
+    "discussions.hidden": {"message_id"},
+    "discussions.closed": {"closed_at"},
     "workitems.mark_set": {"assignment_id", "subtask_id", "subtask_text", "before", "after"},
     **{action: {"assignment_id", "previous_completed_at", "completed_at", "completion_epoch"} for action in ["workitems.completed", "workitems.returned"]},
     "workitems.edited": {"before", "after", "impact", "progress_epoch"},

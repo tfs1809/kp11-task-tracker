@@ -556,7 +556,7 @@ class PopulatedUpgradeTests(TransactionTestCase):
         from apps.accounts.tests.test_stage2 import seed
         seed()
         executor = MigrationExecutor(connection)
-        latest = [('workitems', '0005_revoke_legacy_inactive')]
+        latest = executor.loader.graph.leaf_nodes()
         executor.migrate([('workitems', '0002_history_protection')])
         try:
             old = executor.loader.project_state([('workitems', '0002_history_protection')]).apps
