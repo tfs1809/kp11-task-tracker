@@ -6,6 +6,7 @@ import hmac
 import os
 from pathlib import Path
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
@@ -69,38 +70,63 @@ def _redirect_login(request):
     return RedirectResponse(f"/accounts/login/?next={request.url.path}", status_code=303)
 
 
+MOSCOW = ZoneInfo("Europe/Moscow")
+
+
 def _date(value, with_seconds=False):
     if not value:
         return ""
     if value.tzinfo is None:
         value = value.replace(tzinfo=timezone.utc)
-    value = value.astimezone(timezone.utc)
+    value = value.astimezone(MOSCOW)
     return value.strftime("%d.%m.%Y %H:%M:%S" if with_seconds else "%d.%m.%Y %H:%M")
 
 
-def _assignments(user_id, completed=False):
+def _local_datetime(value):
+    """Parse a browser datetime-local value as Moscow time."""
+    parsed = datetime.fromisoformat(value)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=MOSCOW)
+    return parsed
+
+
+def _assignments(user_id, completed=False, *, search="", kind="all", sort="asc"):
     with connection() as conn:
+        clauses = [
+            "a.user_id=%s", "a.state='active'", "w.archived_at IS NULL",
+            "((%s AND (a.completed_at IS NOT NULL OR (w.kind='event' AND w.event_at IS NOT NULL AND w.event_at <= now() AND (a.event_returned_at IS NULL OR w.event_at + interval '1 day' <= now())))) OR (NOT %s AND a.completed_at IS NULL AND NOT (w.kind='event' AND w.event_at IS NOT NULL AND w.event_at <= now() AND (a.event_returned_at IS NULL OR w.event_at + interval '1 day' <= now()))))",
+        ]
+        params = [user_id, completed, completed]
+        if search:
+            clauses.append("w.title ILIKE %s")
+            params.append(f"%{search}%")
+        if kind in {"task", "event"}:
+            clauses.append("w.kind=%s")
+            params.append(kind)
+        ordering = "DESC" if sort == "desc" else "ASC"
         rows = many(
             conn,
-            """
+            f"""
             SELECT a.id assignment_id, a.completed_at, a.version assignment_version,
+                   a.completion_epoch, a.event_returned_at,
                    w.id item_id, w.kind, w.title, w.description, w.due_at, w.event_at,
                    u.full_name author_name
             FROM workitems_assignment a
             JOIN workitems_workitem w ON w.id=a.work_item_id
             JOIN accounts_user u ON u.id=w.author_id
-            WHERE a.user_id=%s AND a.state='active' AND w.archived_at IS NULL
-              AND ((%s AND a.completed_at IS NOT NULL) OR (NOT %s AND a.completed_at IS NULL))
-            ORDER BY COALESCE(w.event_at,w.due_at), w.id
+            WHERE {' AND '.join(clauses)}
+            ORDER BY COALESCE(w.event_at,w.due_at) {ordering}, w.id {ordering}
             """,
-            (user_id, completed, completed),
+            tuple(params),
         )
         for row in rows:
             row["kind_label"] = "Событие" if row["kind"] == "event" else "Задача"
             due_value = row["due_at"]
+            event_value = row["event_at"]
             row["due_at"] = _date(due_value)
-            row["event_at"] = _date(row["event_at"])
-            row["completed"] = row["completed_at"] is not None
+            row["event_at"] = _date(event_value)
+            now = datetime.now(timezone.utc)
+            row["completed"] = row["completed_at"] is not None or (row["kind"] == "event" and event_value and event_value <= now and (row["event_returned_at"] is None or event_value + timedelta(days=1) <= now))
             row["overdue"] = bool(due_value and due_value < datetime.now(timezone.utc))
             row["subtasks"] = many(conn, "SELECT id,text FROM workitems_subtask WHERE work_item_id=%s AND deleted_at IS NULL ORDER BY position,id", (row["item_id"],))
             for sub in row["subtasks"]:
@@ -367,8 +393,19 @@ async def home(request: Request):
     if not user:
         return _redirect_login(request)
     completed = request.query_params.get("tab") == "completed"
-    rows = _assignments(user["id"], completed)
-    return _page("home.html", request, active="home", tab="completed" if completed else "assigned", assignments=rows, counts={"active": len(_assignments(user["id"], False)), "completed": len(_assignments(user["id"], True))})
+    search = request.query_params.get("q", "").strip()[:120]
+    kind = request.query_params.get("kind", "all")
+    if kind not in {"all", "task", "event"}:
+        kind = "all"
+    sort = request.query_params.get("sort", "asc")
+    if sort not in {"asc", "desc"}:
+        sort = "asc"
+    rows = _assignments(user["id"], completed, search=search, kind=kind, sort=sort)
+    return _page(
+        "home.html", request, active="home", tab="completed" if completed else "assigned",
+        assignments=rows, search=search, kind=kind, sort=sort,
+        counts={"active": len(_assignments(user["id"], False)), "completed": len(_assignments(user["id"], True))},
+    )
 
 
 @app.get("/accounts/profile/", response_class=HTMLResponse)
@@ -385,12 +422,14 @@ async def detail(request: Request, item_id: UUID):
         return _redirect_login(request)
     with connection() as conn:
         item = one(conn, "SELECT w.*,u.full_name author_name FROM workitems_workitem w JOIN accounts_user u ON u.id=w.author_id WHERE w.id=%s AND (w.author_id=%s OR EXISTS (SELECT 1 FROM workitems_assignment a WHERE a.work_item_id=w.id AND a.user_id=%s AND a.state='active'))", (item_id, user["id"], user["id"]))
+        subtasks = many(conn, "SELECT id,text FROM workitems_subtask WHERE work_item_id=%s AND deleted_at IS NULL ORDER BY position,id", (item_id,)) if item else []
     if not item:
         return PlainTextResponse("Not found\n", status_code=404)
     item["kind_label"] = "Событие" if item["kind"] == "event" else "Задача"
+    item["overdue"] = bool(item["due_at"] and item["due_at"] < datetime.now(timezone.utc))
     item["due_at"] = _date(item["due_at"], True)
     item["event_at"] = _date(item["event_at"])
-    return _page("detail.html", request, item=item)
+    return _page("detail.html", request, item=item, subtasks=subtasks)
 
 
 @app.get("/events/{item_id}/chat/", response_class=HTMLResponse)
@@ -437,19 +476,50 @@ async def issued(request: Request):
     user = _require_user(request)
     if not user:
         return _redirect_login(request)
+    search = request.query_params.get("q", "").strip()[:120]
+    kind = request.query_params.get("kind", "all")
+    if kind not in {"all", "task", "event"}:
+        kind = "all"
+    sort = request.query_params.get("sort", "asc")
+    if sort not in {"asc", "desc"}:
+        sort = "asc"
+    conditions = ["w.author_id=%s", "w.archived_at IS NULL"]
+    params = [user["id"]]
+    if search:
+        conditions.append("w.title ILIKE %s")
+        params.append(f"%{search}%")
+    if kind in {"task", "event"}:
+        conditions.append("w.kind=%s")
+        params.append(kind)
+    ordering = "DESC" if sort == "desc" else "ASC"
     with connection() as conn:
-        items = many(conn, "SELECT w.id,w.kind,w.title,w.description,w.due_at,COUNT(a.id) assignees FROM workitems_workitem w LEFT JOIN workitems_assignment a ON a.work_item_id=w.id AND a.state='active' WHERE w.author_id=%s AND w.archived_at IS NULL GROUP BY w.id ORDER BY w.due_at,w.id", (user["id"],))
+        items = many(conn, f"""
+            SELECT w.id,w.kind,w.title,w.description,w.due_at,w.event_at,
+                   COUNT(a.id) FILTER (WHERE a.user_id <> w.author_id) assignees
+            FROM workitems_workitem w
+            LEFT JOIN workitems_assignment a ON a.work_item_id=w.id AND a.state='active'
+            WHERE {' AND '.join(conditions)}
+            GROUP BY w.id
+            HAVING COUNT(a.id) FILTER (WHERE a.user_id <> w.author_id) > 0
+            ORDER BY COALESCE(w.event_at,w.due_at) {ordering}, w.id {ordering}
+        """, tuple(params))
     for item in items:
         item["kind_label"] = "Событие" if item["kind"] == "event" else "Задача"
+        due_value = item["due_at"]
+        item["overdue"] = bool(due_value and due_value < datetime.now(timezone.utc))
         item["due_at"] = _date(item["due_at"])
-    return _page("issued.html", request, active="issued", items=items)
+        item["event_at"] = _date(item["event_at"])
+    return _page("issued.html", request, active="issued", items=items, search=search, kind=kind, sort=sort)
 
 
 @app.get("/workitems/new/", response_class=HTMLResponse)
 async def issue_page(request: Request):
-    if not _require_user(request):
+    user = _require_user(request)
+    if not user:
         return _redirect_login(request)
-    return _page("issue.html", request, values={})
+    with connection() as conn:
+        assignees = many(conn, "SELECT id,full_name,email FROM accounts_user WHERE is_active AND email_verified_at IS NOT NULL ORDER BY full_name,email")
+    return _page("issue.html", request, values={"kind": "task"}, assignees=assignees, current_user_id=str(user["id"]))
 
 
 @app.post("/workitems/new/")
@@ -460,28 +530,47 @@ async def issue(request: Request):
     form = await request.form()
     raw = request.cookies.get(SESSION_COOKIE)
     values = {key: str(form.get(key, "")) for key in ("title", "description", "kind", "due_at", "event_at")}
+    values["assignee_ids"] = [str(value) for value in form.getlist("assignee_ids")]
+    values["subtasks"] = [str(value).strip() for value in form.getlist("subtasks") if str(value).strip()]
     if not csrf_valid(raw, str(form.get("csrf_token", ""))):
         return PlainTextResponse("Forbidden\n", status_code=403)
     if not values["title"].strip() or values["kind"] not in {"task", "event"}:
-        return _page("issue.html", request, values=values, error="Заполните обязательные поля.")
+        with connection() as conn:
+            assignees = many(conn, "SELECT id,full_name,email FROM accounts_user WHERE is_active AND email_verified_at IS NOT NULL ORDER BY full_name,email")
+        return _page("issue.html", request, values=values, assignees=assignees, current_user_id=str(user["id"]), error="Заполните обязательные поля.")
     with connection() as conn:
         try:
             require_permission(conn, user["id"], "workitems.create")
         except PermissionError:
             return PlainTextResponse("Forbidden\n", status_code=403)
-    from datetime import datetime
     try:
-        due = datetime.fromisoformat(values["due_at"])
-        event = datetime.fromisoformat(values["event_at"]) if values["event_at"] else None
+        due = _local_datetime(values["due_at"])
+        event = _local_datetime(values["event_at"]) if values["event_at"] else None
     except ValueError:
-        return _page("issue.html", request, values=values, error="Проверьте даты.")
+        with connection() as conn:
+            assignees = many(conn, "SELECT id,full_name,email FROM accounts_user WHERE is_active AND email_verified_at IS NOT NULL ORDER BY full_name,email")
+        return _page("issue.html", request, values=values, assignees=assignees, current_user_id=str(user["id"]), error="Проверьте даты.")
     if values["kind"] == "event" and event is None:
-        return _page("issue.html", request, values=values, error="Для события укажите дату.")
+        with connection() as conn:
+            assignees = many(conn, "SELECT id,full_name,email FROM accounts_user WHERE is_active AND email_verified_at IS NOT NULL ORDER BY full_name,email")
+        return _page("issue.html", request, values=values, assignees=assignees, current_user_id=str(user["id"]), error="Для события укажите дату.")
+    assignee_ids = []
+    try:
+        assignee_ids = list(dict.fromkeys(UUID(value) for value in values["assignee_ids"]))
+    except ValueError:
+        assignee_ids = []
+    if not assignee_ids:
+        assignee_ids = [user["id"]]
     import uuid
     item_id = uuid.uuid4()
     with transaction() as conn:
         conn.execute("INSERT INTO workitems_workitem(id,kind,title,description,author_id,created_at,due_at,event_at,version,progress_epoch) VALUES (%s,%s,%s,%s,%s,now(),%s,%s,1,1)", (item_id, values["kind"], values["title"].strip(), values["description"], user["id"], due, event))
-        conn.execute("INSERT INTO workitems_assignment(id,work_item_id,user_id,state,first_assigned_at,assigned_at,revoked_reason,version,assigned_by_id) VALUES (%s,%s,%s,'active',now(),now(),'',1,%s)", (uuid.uuid4(), item_id, user["id"], user["id"]))
+        valid_users = {row["id"] for row in many(conn, "SELECT id FROM accounts_user WHERE id = ANY(%s) AND is_active AND email_verified_at IS NOT NULL", (assignee_ids,))}
+        valid_users.add(user["id"]) if not valid_users else None
+        for assignee_id in valid_users:
+            conn.execute("INSERT INTO workitems_assignment(id,work_item_id,user_id,state,first_assigned_at,assigned_at,revoked_reason,version,assigned_by_id) VALUES (%s,%s,%s,'active',now(),now(),'',1,%s)", (uuid.uuid4(), item_id, assignee_id, user["id"]))
+        for position, text in enumerate(values["subtasks"], start=1):
+            conn.execute("INSERT INTO workitems_subtask(id,text,position,content_revision,created_at,work_item_id) VALUES (%s,%s,%s,1,now(),%s)", (uuid.uuid4(), text[:1000], position, item_id))
     return RedirectResponse(f"/workitems/{item_id}/", status_code=303)
 
 
@@ -506,7 +595,7 @@ async def completion(request: Request, assignment_id: UUID):
             pass
         if not completed and assignment["kind"] == "event" and assignment["event_at"] and assignment["event_at"] + timedelta(days=1) < datetime.now(timezone.utc):
             return PlainTextResponse("Событие уже закрыто\n", status_code=409)
-        conn.execute("UPDATE workitems_assignment SET completed_at=CASE WHEN %s THEN now() ELSE NULL END, completion_epoch=CASE WHEN %s THEN 1 ELSE NULL END, version=version+1 WHERE id=%s", (completed, completed, assignment_id))
+        conn.execute("UPDATE workitems_assignment AS a SET completed_at=CASE WHEN %s THEN now() ELSE NULL END, completion_epoch=CASE WHEN %s THEN 1 ELSE NULL END, event_returned_at=CASE WHEN %s THEN NULL WHEN w.kind='event' THEN now() ELSE NULL END, version=a.version+1 FROM workitems_workitem w WHERE a.id=%s AND w.id=a.work_item_id", (completed, completed, completed, assignment_id))
     return RedirectResponse("/", status_code=303)
 
 
@@ -521,7 +610,16 @@ async def mark(request: Request, assignment_id: UUID, subtask_id: UUID):
         return PlainTextResponse("Forbidden\n", status_code=403)
     checked = str(form.get("value")) == "true"
     with transaction() as conn:
-        conn.execute("UPDATE workitems_subtaskprogress p SET checked_at=CASE WHEN %s THEN now() ELSE NULL END, checked_revision=CASE WHEN %s THEN s.content_revision ELSE NULL END, version=p.version+1 FROM workitems_assignment a JOIN workitems_subtask s ON s.id=%s WHERE p.assignment_id=a.id AND p.subtask_id=s.id AND a.id=%s AND a.user_id=%s", (checked, checked, subtask_id, assignment_id, user["id"]))
+        assignment = one(conn, "SELECT id,work_item_id FROM workitems_assignment WHERE id=%s AND user_id=%s AND state='active'", (assignment_id, user["id"]))
+        subtask = one(conn, "SELECT id,work_item_id,content_revision FROM workitems_subtask WHERE id=%s AND deleted_at IS NULL", (subtask_id,))
+        if not assignment or not subtask or assignment["work_item_id"] != subtask["work_item_id"]:
+            return PlainTextResponse("Not found\n", status_code=404)
+        conn.execute(
+            """INSERT INTO workitems_subtaskprogress(assignment_id,subtask_id,work_item_id,checked_at,checked_revision,version)
+               VALUES (%s,%s,%s,CASE WHEN %s THEN now() ELSE NULL END,CASE WHEN %s THEN %s ELSE NULL END,1)
+               ON CONFLICT (assignment_id,subtask_id) DO UPDATE SET checked_at=EXCLUDED.checked_at,checked_revision=EXCLUDED.checked_revision,version=workitems_subtaskprogress.version+1""",
+            (assignment_id, subtask_id, assignment["work_item_id"], checked, checked, subtask["content_revision"]),
+        )
     return RedirectResponse("/", status_code=303)
 
 

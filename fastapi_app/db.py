@@ -92,6 +92,7 @@ SCHEMA_STATEMENTS = (
         UNIQUE(work_item_id, user_id)
     )
     """,
+    "ALTER TABLE workitems_assignment ADD COLUMN IF NOT EXISTS event_returned_at timestamptz",
     """
     CREATE TABLE IF NOT EXISTS workitems_subtask (
         id uuid PRIMARY KEY, text varchar(1000) NOT NULL, position integer NOT NULL DEFAULT 0,
