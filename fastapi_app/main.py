@@ -5,7 +5,7 @@ import hashlib
 import hmac
 import os
 from pathlib import Path
-from uuid import UUID
+from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
 from fastapi import FastAPI, Request
@@ -102,6 +102,10 @@ def _can_send_item(conn, item_id, user_id):
     """, (item_id, user_id, user_id)) is not None or has_permission(conn, user_id, "discussions.send_accessible")
 
 
+def _can_edit_item(conn, item, user_id):
+    return has_permission(conn, user_id, "workitems.edit_all") or (item["author_id"] == user_id and has_permission(conn, user_id, "workitems.edit_own"))
+
+
 def _redirect_login(request):
     return RedirectResponse(f"/accounts/login/?next={request.url.path}", status_code=303)
 
@@ -124,6 +128,39 @@ def _local_datetime(value):
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=MOSCOW)
     return parsed
+
+
+def _form_datetime(form, prefix, fallback_key=None):
+    """Read separate Moscow date/time controls, retaining the old combined field API."""
+    date_value = str(form.get(f"{prefix}_date", "")).strip()
+    time_value = str(form.get(f"{prefix}_time", "")).strip()
+    if date_value and time_value:
+        return _local_datetime(f"{date_value}T{time_value}")
+    if fallback_key:
+        fallback = str(form.get(fallback_key, "")).strip()
+        if fallback:
+            return _local_datetime(fallback)
+    return None
+
+
+def _date_control_values(value):
+    if not value:
+        return {"date": "", "time": ""}
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    value = value.astimezone(MOSCOW)
+    return {"date": value.strftime("%Y-%m-%d"), "time": value.strftime("%H:%M")}
+
+
+def _issue_values(form):
+    values = {key: str(form.get(key, "")) for key in ("title", "description", "kind", "due_at", "event_at", "due_date", "due_time", "event_date", "event_time")}
+    values["assignee_ids"] = [str(value) for value in form.getlist("assignee_ids")]
+    values["subtasks"] = [str(value).strip() for value in form.getlist("subtasks")]
+    return values
+
+
+def _employees(conn):
+    return many(conn, "SELECT id,full_name,email FROM accounts_user WHERE is_active AND email_verified_at IS NOT NULL ORDER BY full_name,email")
 
 
 def _assignments(user_id, completed=False, *, search="", kind="all", author="all", sort="asc"):
@@ -489,13 +526,29 @@ async def detail(request: Request, item_id: UUID):
         if item and not _can_read_item(conn, item_id, user["id"]):
             item = None
         subtasks = many(conn, "SELECT id,text FROM workitems_subtask WHERE work_item_id=%s AND deleted_at IS NULL ORDER BY position,id", (item_id,)) if item else []
+        can_edit = bool(item and _can_edit_item(conn, item, user["id"]))
+        assignees = []
+        if item and (item["author_id"] == user["id"] or has_permission(conn, user["id"], "workitems.view_all")):
+            assignees = many(conn, """
+                SELECT a.id assignment_id,a.state,a.assigned_at,a.completed_at,
+                       u.id user_id,u.full_name,u.email,
+                       (SELECT count(*) FROM workitems_subtask s WHERE s.work_item_id=w.id AND s.deleted_at IS NULL) total_subtasks,
+                       (SELECT count(*) FROM workitems_subtaskprogress p WHERE p.assignment_id=a.id AND p.checked_at IS NOT NULL) checked_subtasks
+                FROM workitems_assignment a JOIN accounts_user u ON u.id=a.user_id
+                JOIN workitems_workitem w ON w.id=a.work_item_id
+                WHERE a.work_item_id=%s ORDER BY u.full_name
+            """, (item_id,))
     if not item:
         return PlainTextResponse("Not found\n", status_code=404)
     item["kind_label"] = "Событие" if item["kind"] == "event" else "Задача"
     item["overdue"] = bool(item["due_at"] and item["due_at"] < datetime.now(timezone.utc))
     item["due_at"] = _date(item["due_at"], True)
     item["event_at"] = _date(item["event_at"])
-    return _page("detail.html", request, item=item, subtasks=subtasks)
+    for assignee in assignees:
+        total = assignee["total_subtasks"]
+        assignee["progress"] = "Нет исполнителей" if assignee["state"] != "active" else ("100%" if assignee["completed_at"] else (f"{round(assignee['checked_subtasks'] / total * 100)}%" if total else "0%"))
+        assignee["status"] = "Отозвано" if assignee["state"] != "active" else ("Выполнено" if assignee["completed_at"] else "В работе")
+    return _page("detail.html", request, item=item, subtasks=subtasks, assignees=assignees, can_edit=can_edit)
 
 
 @app.get("/events/{item_id}/chat/", response_class=HTMLResponse)
@@ -591,8 +644,9 @@ async def issue_page(request: Request):
     with connection() as conn:
         if not has_permission(conn, user["id"], "workitems.create"):
             return PlainTextResponse("Forbidden\n", status_code=403)
-        assignees = many(conn, "SELECT id,full_name,email FROM accounts_user WHERE is_active AND email_verified_at IS NOT NULL ORDER BY full_name,email")
-    return _page("issue.html", request, values={"kind": "task"}, assignees=assignees, current_user_id=str(user["id"]))
+        assignees = _employees(conn)
+    values = {"kind": "task", "assignee_ids": [str(user["id"])], "subtasks": []}
+    return _page("issue.html", request, values=values, assignees=assignees, current_user_id=str(user["id"]), edit_mode=False)
 
 
 @app.post("/workitems/new/")
@@ -602,31 +656,31 @@ async def issue(request: Request):
         return _redirect_login(request)
     form = await request.form()
     raw = request.cookies.get(SESSION_COOKIE)
-    values = {key: str(form.get(key, "")) for key in ("title", "description", "kind", "due_at", "event_at")}
-    values["assignee_ids"] = [str(value) for value in form.getlist("assignee_ids")]
-    values["subtasks"] = [str(value).strip() for value in form.getlist("subtasks") if str(value).strip()]
+    values = _issue_values(form)
     if not csrf_valid(raw, str(form.get("csrf_token", ""))):
         return PlainTextResponse("Forbidden\n", status_code=403)
     if not values["title"].strip() or values["kind"] not in {"task", "event"}:
         with connection() as conn:
-            assignees = many(conn, "SELECT id,full_name,email FROM accounts_user WHERE is_active AND email_verified_at IS NOT NULL ORDER BY full_name,email")
-        return _page("issue.html", request, values=values, assignees=assignees, current_user_id=str(user["id"]), error="Заполните обязательные поля.")
+            assignees = _employees(conn)
+        return _page("issue.html", request, values=values, assignees=assignees, current_user_id=str(user["id"]), edit_mode=False, error="Заполните обязательные поля.")
     with connection() as conn:
         try:
             require_permission(conn, user["id"], "workitems.create")
         except PermissionError:
             return PlainTextResponse("Forbidden\n", status_code=403)
     try:
-        due = _local_datetime(values["due_at"])
-        event = _local_datetime(values["event_at"]) if values["event_at"] else None
+        due = _form_datetime(form, "due", "due_at")
+        event = _form_datetime(form, "event", "event_at")
+        if due is None:
+            raise ValueError("Срок обязателен")
     except ValueError:
         with connection() as conn:
-            assignees = many(conn, "SELECT id,full_name,email FROM accounts_user WHERE is_active AND email_verified_at IS NOT NULL ORDER BY full_name,email")
-        return _page("issue.html", request, values=values, assignees=assignees, current_user_id=str(user["id"]), error="Проверьте даты.")
+            assignees = _employees(conn)
+        return _page("issue.html", request, values=values, assignees=assignees, current_user_id=str(user["id"]), edit_mode=False, error="Проверьте даты.")
     if values["kind"] == "event" and event is None:
         with connection() as conn:
-            assignees = many(conn, "SELECT id,full_name,email FROM accounts_user WHERE is_active AND email_verified_at IS NOT NULL ORDER BY full_name,email")
-        return _page("issue.html", request, values=values, assignees=assignees, current_user_id=str(user["id"]), error="Для события укажите дату.")
+            assignees = _employees(conn)
+        return _page("issue.html", request, values=values, assignees=assignees, current_user_id=str(user["id"]), edit_mode=False, error="Для события укажите дату.")
     assignee_ids = []
     try:
         assignee_ids = list(dict.fromkeys(UUID(value) for value in values["assignee_ids"]))
@@ -640,10 +694,121 @@ async def issue(request: Request):
         conn.execute("INSERT INTO workitems_workitem(id,kind,title,description,author_id,created_at,due_at,event_at,version,progress_epoch) VALUES (%s,%s,%s,%s,%s,now(),%s,%s,1,1)", (item_id, values["kind"], values["title"].strip(), values["description"], user["id"], due, event))
         valid_users = {row["id"] for row in many(conn, "SELECT id FROM accounts_user WHERE id = ANY(%s) AND is_active AND email_verified_at IS NOT NULL", (assignee_ids,))}
         valid_users.add(user["id"]) if not valid_users else None
+        if valid_users - {user["id"]} and not has_permission(conn, user["id"], "workitems.manage_own_assignees") and not has_permission(conn, user["id"], "workitems.edit_all"):
+            return PlainTextResponse("Недостаточно прав для назначения других исполнителей\n", status_code=403)
         for assignee_id in valid_users:
             conn.execute("INSERT INTO workitems_assignment(id,work_item_id,user_id,state,first_assigned_at,assigned_at,revoked_reason,version,assigned_by_id) VALUES (%s,%s,%s,'active',now(),now(),'',1,%s)", (uuid.uuid4(), item_id, assignee_id, user["id"]))
-        for position, text in enumerate(values["subtasks"], start=1):
+        position = 0
+        for text in values["subtasks"]:
+            if not text:
+                continue
+            position += 1
             conn.execute("INSERT INTO workitems_subtask(id,text,position,content_revision,created_at,work_item_id) VALUES (%s,%s,%s,1,now(),%s)", (uuid.uuid4(), text[:1000], position, item_id))
+    return RedirectResponse(f"/workitems/{item_id}/", status_code=303)
+
+
+def _edit_values(item, subtasks, assignee_ids):
+    due = _date_control_values(item["due_at"])
+    event = _date_control_values(item["event_at"])
+    return {
+        "title": item["title"], "description": item["description"], "kind": item["kind"],
+        "due_date": due["date"], "due_time": due["time"], "event_date": event["date"], "event_time": event["time"],
+        "assignee_ids": [str(value) for value in assignee_ids],
+        "subtasks": [{"id": str(row["id"]), "text": row["text"]} for row in subtasks],
+    }
+
+
+@app.get("/workitems/{item_id}/edit/", response_class=HTMLResponse)
+async def edit_page(request: Request, item_id: UUID):
+    user = _require_user(request)
+    if not user:
+        return _redirect_login(request)
+    with connection() as conn:
+        item = one(conn, "SELECT * FROM workitems_workitem WHERE id=%s", (item_id,))
+        if not item:
+            return PlainTextResponse("Not found\n", status_code=404)
+        if not _can_edit_item(conn, item, user["id"]):
+            return PlainTextResponse("Forbidden\n", status_code=403)
+        subtasks = many(conn, "SELECT id,text FROM workitems_subtask WHERE work_item_id=%s AND deleted_at IS NULL ORDER BY position,id", (item_id,))
+        active_assignees = many(conn, "SELECT user_id FROM workitems_assignment WHERE work_item_id=%s AND state='active'", (item_id,))
+        assignees = _employees(conn)
+    return _page("issue.html", request, values=_edit_values(item, subtasks, [row["user_id"] for row in active_assignees]), assignees=assignees, current_user_id=str(user["id"]), edit_mode=True, item_id=item_id)
+
+
+@app.post("/workitems/{item_id}/edit/")
+async def edit(request: Request, item_id: UUID):
+    user = _require_user(request)
+    if not user:
+        return _redirect_login(request)
+    form = await request.form()
+    raw = request.cookies.get(SESSION_COOKIE)
+    if not csrf_valid(raw, str(form.get("csrf_token", ""))):
+        return PlainTextResponse("Forbidden\n", status_code=403)
+    values = _issue_values(form)
+    try:
+        due = _form_datetime(form, "due", "due_at")
+        event = _form_datetime(form, "event", "event_at")
+        if due is None or (values["kind"] == "event" and event is None):
+            raise ValueError
+        selected_ids = list(dict.fromkeys(UUID(value) for value in values["assignee_ids"]))
+        posted_subtask_ids = [value for value in form.getlist("subtask_ids")]
+    except (ValueError, TypeError):
+        with connection() as conn:
+            item = one(conn, "SELECT * FROM workitems_workitem WHERE id=%s", (item_id,))
+            assignees = _employees(conn)
+        return _page("issue.html", request, values=values, assignees=assignees, current_user_id=str(user["id"]), edit_mode=True, item_id=item_id, error="Проверьте исполнителей и даты.")
+    with transaction() as conn:
+        item = one(conn, "SELECT * FROM workitems_workitem WHERE id=%s FOR UPDATE", (item_id,))
+        if not item:
+            return PlainTextResponse("Not found\n", status_code=404)
+        if not _can_edit_item(conn, item, user["id"]):
+            return PlainTextResponse("Forbidden\n", status_code=403)
+        if values["kind"] != item["kind"]:
+            return PlainTextResponse("Тип задания нельзя изменить\n", status_code=409)
+        valid_users = {row["id"] for row in many(conn, "SELECT id FROM accounts_user WHERE id = ANY(%s) AND is_active AND email_verified_at IS NOT NULL", (selected_ids,))}
+        if not valid_users:
+            return PlainTextResponse("Выберите хотя бы одного исполнителя\n", status_code=400)
+        now = datetime.now(timezone.utc)
+        existing = many(conn, "SELECT id,user_id,state FROM workitems_assignment WHERE work_item_id=%s FOR UPDATE", (item_id,))
+        existing_by_user = {row["user_id"]: row for row in existing}
+        current_active_users = {row["user_id"] for row in existing if row["state"] == "active"}
+        if current_active_users != valid_users and not has_permission(conn, user["id"], "workitems.edit_all") and not has_permission(conn, user["id"], "workitems.manage_own_assignees"):
+            return PlainTextResponse("Недостаточно прав для изменения исполнителей\n", status_code=403)
+        conn.execute("UPDATE workitems_workitem SET title=%s,description=%s,due_at=%s,event_at=%s,version=version+1 WHERE id=%s", (values["title"].strip(), values["description"], due, event, item_id))
+        for selected in valid_users:
+            previous = existing_by_user.get(selected)
+            if previous and previous["state"] != "active":
+                conn.execute("UPDATE workitems_assignment SET state='active',assigned_at=%s,revoked_at=NULL,revoked_by_id=NULL,revoked_reason='',version=version+1 WHERE id=%s", (now, previous["id"]))
+            elif not previous:
+                conn.execute("INSERT INTO workitems_assignment(id,work_item_id,user_id,state,first_assigned_at,assigned_at,revoked_reason,version,assigned_by_id) VALUES (%s,%s,%s,'active',%s,%s,'',1,%s)", (uuid4(), item_id, selected, now, now, user["id"]))
+        for previous in existing:
+            if previous["state"] == "active" and previous["user_id"] not in valid_users:
+                conn.execute("UPDATE workitems_assignment SET state='revoked',revoked_at=%s,revoked_by_id=%s,revoked_reason='Отозвано автором',version=version+1 WHERE id=%s", (now, user["id"], previous["id"]))
+        current_subtasks = many(conn, "SELECT id,text FROM workitems_subtask WHERE work_item_id=%s AND deleted_at IS NULL FOR UPDATE", (item_id,))
+        current_by_id = {row["id"]: row for row in current_subtasks}
+        posted_text = {}
+        for raw_id, text in zip(posted_subtask_ids, values["subtasks"]):
+            if not text:
+                continue
+            subtask_id = UUID(raw_id) if raw_id else uuid4()
+            posted_text[subtask_id] = text[:1000]
+        subtasks_changed = False
+        for subtask_id, text in posted_text.items():
+            if subtask_id in current_by_id:
+                if current_by_id[subtask_id]["text"] != text:
+                    conn.execute("UPDATE workitems_subtask SET text=%s,content_revision=content_revision+1 WHERE id=%s", (text, subtask_id))
+                    conn.execute("DELETE FROM workitems_subtaskprogress WHERE subtask_id=%s", (subtask_id,))
+                    subtasks_changed = True
+            else:
+                conn.execute("INSERT INTO workitems_subtask(id,text,position,content_revision,created_at,work_item_id) VALUES (%s,%s,%s,1,%s,%s)", (subtask_id, text, len(current_subtasks) + 1, now, item_id))
+                subtasks_changed = True
+        for subtask_id in current_by_id:
+            if subtask_id not in posted_text:
+                conn.execute("UPDATE workitems_subtask SET deleted_at=%s WHERE id=%s", (now, subtask_id))
+                conn.execute("DELETE FROM workitems_subtaskprogress WHERE subtask_id=%s", (subtask_id,))
+                subtasks_changed = True
+        if subtasks_changed:
+            conn.execute("UPDATE workitems_assignment SET completed_at=NULL,completion_epoch=NULL,event_returned_at=NULL WHERE work_item_id=%s AND state='active'", (item_id,))
     return RedirectResponse(f"/workitems/{item_id}/", status_code=303)
 
 

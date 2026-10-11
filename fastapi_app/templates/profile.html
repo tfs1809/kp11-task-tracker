@@ -1,4 +1,72 @@
 {% extends 'base.html' %}
+
 {% block content %}
-<section class="card profile-page"><p class="eyebrow">Профиль сотрудника</p><h1>{{ user.full_name }}</h1><p class="profile-email">{{ user.email }}</p><p><span class="status-dot"></span> Учетная запись активна</p>{% if roles %}<p class="profile-roles"><strong>Роли:</strong> {% for role in roles %}<span class="profile-role">{{ role.name }}</span>{% endfor %}</p>{% endif %}<div class="profile-actions"><a class="button" href="/accounts/password/">Изменить пароль</a>{% if is_admin %}<a class="button secondary" href="/accounts/administration/">Администрирование</a>{% endif %}</div></section>
+<div class="profile-shell">
+  <header class="profile-heading">
+    <h1>ПРОФИЛЬ</h1>
+    <p>Сведения о вашей учётной записи и смена пароля.</p>
+  </header>
+
+  <section class="profile-panel" aria-labelledby="profile-info-title">
+    <div class="profile-panel-inner">
+      <div class="profile-grid">
+        <div>
+          <h2 id="profile-info-title">ФИО</h2>
+          <p>{{ user.full_name }}</p>
+        </div>
+        <div>
+          <h2>ПОЧТА (ЛОГИН)</h2>
+          <p>{{ user.email }}</p>
+        </div>
+      </div>
+      <div class="profile-divider"></div>
+      <h2>РОЛИ</h2>
+      <div class="profile-role-list">
+        {% if roles %}
+          {% for role in roles %}<span class="profile-role">{{ role.name }}</span>{% endfor %}
+        {% else %}
+          <span class="profile-role">Пользователь</span>
+        {% endif %}
+      </div>
+      <p class="profile-lock" role="note"><span aria-hidden="true">🔒</span> Роли назначены администратором. Изменить их самостоятельно нельзя.</p>
+    </div>
+  </section>
+
+  <section class="profile-panel password-panel" aria-labelledby="password-title">
+    <div class="profile-panel-inner">
+      <h2 id="password-title">СМЕНА ПАРОЛЯ</h2>
+      <p class="profile-intro">Введите текущий пароль и укажите новый, чтобы изменить пароль для входа.</p>
+      {% if message %}<p class="notice" role="status">{{ message }}</p>{% endif %}
+      {% if error %}<p class="notice error-summary" role="alert">{{ error }}</p>{% endif %}
+      <form method="post" action="/accounts/password/" class="profile-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf }}">
+        <div class="form-field">
+          <label for="old_password">ТЕКУЩИЙ ПАРОЛЬ *</label>
+          <div class="password-input-wrap">
+            <input id="old_password" name="old_password" type="password" required autocomplete="current-password" placeholder="Введите текущий пароль">
+            <button type="button" class="password-toggle" data-password-toggle="old_password" aria-label="Показать пароль">◉</button>
+          </div>
+        </div>
+        <div class="form-field">
+          <label for="password">НОВЫЙ ПАРОЛЬ *</label>
+          <div class="password-input-wrap">
+            <input id="password" name="password" type="password" minlength="12" required autocomplete="new-password" placeholder="Введите новый пароль">
+            <button type="button" class="password-toggle" data-password-toggle="password" aria-label="Показать пароль">◉</button>
+          </div>
+        </div>
+        <div class="form-field">
+          <label for="password_confirm">ПОДТВЕРЖДЕНИЕ НОВОГО ПАРОЛЯ *</label>
+          <div class="password-input-wrap">
+            <input id="password_confirm" name="password_confirm" type="password" minlength="12" required autocomplete="new-password" placeholder="Повторите новый пароль">
+            <button type="button" class="password-toggle" data-password-toggle="password_confirm" aria-label="Показать пароль">◉</button>
+          </div>
+        </div>
+        <div class="password-actions">
+          <button type="submit" class="password-submit">СОХРАНИТЬ ПАРОЛЬ</button>
+        </div>
+      </form>
+      <p class="profile-footnote">* Все поля обязательны. Новый пароль и подтверждение должны совпадать.</p>
+    </div>
+  </section>
+</div>
 {% endblock %}

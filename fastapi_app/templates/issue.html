@@ -1,13 +1,27 @@
 {% extends 'base.html' %}
 {% block content %}
-<section class="card issue-card"><p class="eyebrow">Новое назначение</p><h1>Создать задачу или событие</h1>{% if error %}<p class="notice error-summary" role="alert">{{ error }}</p>{% endif %}
-<form method="post" action="/workitems/new/"><input type="hidden" name="csrf_token" value="{{ csrf }}">
-  <div class="form-field"><label for="title">Название</label><input id="title" name="title" maxlength="255" required value="{{ values.title or '' }}"></div>
-  <div class="form-field"><label for="description">Описание</label><textarea id="description" name="description" maxlength="10000">{{ values.description or '' }}</textarea></div>
-  <div class="form-field"><label for="kind">Тип объекта</label><select id="kind" name="kind"><option value="task" {% if values.kind != 'event' %}selected{% endif %}>Задача</option><option value="event" {% if values.kind == 'event' %}selected{% endif %}>Событие</option></select></div>
-  <div class="form-grid"><div class="form-field"><label for="due_at">Срок до</label><input id="due_at" name="due_at" type="datetime-local" required value="{{ values.due_at or '' }}"><p class="helptext">Время указывается по Москве.</p></div><div class="form-field"><label for="event_at">Дата события</label><input id="event_at" name="event_at" type="datetime-local" value="{{ values.event_at or '' }}"><p class="helptext">Для события обязательно.</p></div></div>
-  <fieldset><legend>Исполнители</legend><p class="helptext">Если никого не выбрать, исполнителем будете вы. Задача, где вы только автор, появится в «Выдано мной».</p>{% for employee in assignees %}<label class="choice"><input type="checkbox" name="assignee_ids" value="{{ employee.id }}" {% if (values.assignee_ids and employee.id|string in values.assignee_ids) or (not values.assignee_ids and employee.id|string == current_user_id) %}checked{% endif %}> <span>{{ employee.full_name }} <small>{{ employee.email }}</small></span></label>{% endfor %}</fieldset>
-  <fieldset><legend>Подзадачи</legend><p class="helptext">Для задачи кнопка «Готово» станет доступной после отметки всех пунктов.</p><div data-subtasks>{% for text in values.subtasks or [] %}<div class="subtask-row"><input name="subtasks" maxlength="1000" value="{{ text }}" placeholder="Текст подзадачи"><button class="remove-subtask secondary" type="button">Удалить</button></div>{% endfor %}</div><button class="button secondary" type="button" data-add-subtask>Добавить подзадачу</button></fieldset>
-  <div class="task-actions"><button type="submit">Создать</button><a class="button secondary" href="/">Отмена</a></div>
-</form></section>
+<div class="issue-shell">
+  <a class="back-link" href="/">← Мои задачи</a>
+  <section class="issue-panel"><div class="issue-panel-inner">
+    <p class="eyebrow">{{ 'Редактирование задачи' if edit_mode else 'Новая задача' }}</p>
+    <h1>{{ 'ИЗМЕНИТЬ ЗАДАЧУ' if edit_mode else 'НОВАЯ ЗАДАЧА' }}</h1>
+    <p class="issue-intro">{{ 'Изменения описания и сроков увидят все исполнители. Их личные отметки сохранятся.' if edit_mode else 'Заполните сведения о задаче и добавьте шаги для её выполнения.' }}</p>
+    {% if error %}<p class="notice error-summary" role="alert">{{ error }}</p>{% endif %}
+    <form method="post" action="{{ '/workitems/' ~ item_id ~ '/edit/' if edit_mode else '/workitems/new/' }}" class="issue-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf }}">
+      <div class="form-field"><label for="title">НАЗВАНИЕ ЗАДАЧИ *</label><input id="title" name="title" maxlength="255" required value="{{ values.title or '' }}"></div>
+      <div class="form-field"><label for="description">ОПИСАНИЕ</label><textarea id="description" name="description" maxlength="10000">{{ values.description or '' }}</textarea></div>
+      <div class="form-field kind-field"><label for="kind">ТИП ОБЪЕКТА *</label><select id="kind" name="kind" {% if edit_mode %}disabled{% endif %}><option value="task" {% if values.kind != 'event' %}selected{% endif %}>Задача</option><option value="event" {% if values.kind == 'event' %}selected{% endif %}>Событие</option></select>{% if edit_mode %}<input type="hidden" name="kind" value="{{ values.kind }}">{% endif %}</div>
+      <div class="form-grid issue-dates">
+        <div class="form-field assignee-field"><label>ИСПОЛНИТЕЛИ *</label><details class="assignee-picker"><summary><span data-assignee-label>Выберите исполнителей</span><span class="picker-chevron">⌄</span></summary><div class="assignee-options">{% for employee in assignees %}<label class="choice"><input type="checkbox" name="assignee_ids" value="{{ employee.id }}" {% if employee.id|string in values.assignee_ids %}checked{% endif %}><span>{{ employee.full_name }}<small>{{ employee.email }}</small></span></label>{% endfor %}</div></details><p class="helptext" data-assignee-count></p></div>
+        <div class="form-field"><label for="due_date">СРОК: ДАТА *</label><input id="due_date" name="due_date" type="date" required value="{{ values.due_date or '' }}"></div>
+        <div class="form-field"><label for="due_time">ВРЕМЯ *</label><input id="due_time" name="due_time" type="time" required value="{{ values.due_time or '' }}"></div>
+      </div>
+      <div class="form-grid issue-dates event-fields" {% if values.kind != 'event' %}hidden{% endif %}><div class="form-field"><label for="event_date">ДАТА СОБЫТИЯ *</label><input id="event_date" name="event_date" type="date" {% if values.kind == 'event' %}required{% endif %} value="{{ values.event_date or '' }}"></div><div class="form-field"><label for="event_time">ВРЕМЯ СОБЫТИЯ *</label><input id="event_time" name="event_time" type="time" {% if values.kind == 'event' %}required{% endif %} value="{{ values.event_time or '' }}"></div></div>
+      <fieldset class="subtasks-field"><legend>ПОДЗАДАЧИ <span data-subtask-count>{% if values.subtasks %}Добавлено: {{ values.subtasks|length }}{% endif %}</span></legend><div data-subtasks>{% for subtask in values.subtasks or [] %}<div class="subtask-row"><input type="hidden" name="subtask_ids" value="{{ subtask.id if subtask is mapping else '' }}"><span class="subtask-box" aria-hidden="true"></span><input name="subtasks" maxlength="1000" value="{{ subtask.text if subtask is mapping else subtask }}" placeholder="Добавить шаг"><button class="remove-subtask" type="button" aria-label="Удалить подзадачу">×</button></div>{% endfor %}</div><button class="button secondary add-subtask" type="button" data-add-subtask>＋ ДОБАВИТЬ ПОДЗАДАЧУ</button></fieldset>
+      <div class="issue-actions"><button class="button" type="submit">{{ 'СОХРАНИТЬ ИЗМЕНЕНИЯ' if edit_mode else 'СОЗДАТЬ ЗАДАЧУ' }}</button><a class="button secondary" href="/">ОТМЕНА</a></div>
+      <p class="issue-footnote">* Обязательные поля. Отмена вернёт к списку без сохранения.</p>
+    </form>
+  </div></section>
+</div>
 {% endblock %}
