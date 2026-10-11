@@ -1,8 +1,16 @@
 # Состояние проекта
 
-Обновлено: 11.10.2026 01:36 Москва.
+Обновлено: 11.10.2026 10:59 Москва.
 
 Проектирование и этапы 1–5 приняты пользователем. Коммиты: **34b12bb**, **f34e6b1**, **d3854b7**, **ba89479**, принятый этап 5 **7b6f134** (`Implement responsive work item interface and browser validation`). **Этап 6 реализован полностью**; пользователь разрешил коммит и push всех изменений в origin/main 11.10.2026. Этап 7 не начинался. SPEC.md, принятая PERMISSIONS.md, runtime/browser lockfiles и digest базовых образов сохранены.
+
+## Инструкция Docker Desktop Windows
+
+По просьбе пользователя checkout возвращен на Django-ветку `work`, HEAD **abb3577**, соответствующий опубликованному `origin/main`; ветка `feat/fastapi-migration` сохранена отдельно. Добавлен [WINDOWS_DOCKER_DESKTOP.md](WINDOWS_DOCKER_DESKTOP.md) и ссылка из README: PowerShell, WSL 2/Linux containers, LF для PostgreSQL init-скрипта, UTF-8 для генерации .env, миграции, bootstrap через Mailpit, серверные проверки, ручной сценарий, остановка/обновление и сохранение volumes.
+
+Код приложения, инфраструктура, миграции и зависимости не менялись. При подготовке инструкции реально выполнены в текущей **Linux cloud-среде**: `docker compose config --quiet` и `git diff --check` (exit 0); `python3 -X utf8 scripts/smoke.py` (exit 0: login/HTML/CSS/no-store/private health/DB readiness и новое SMTP-письмо в Mailpit). Текущие db/web/Mailpit healthy. Сверены параметры bootstrap и пути команд с исходниками. Полная suite повторно для документации не запускалась; прежние 162/162 ниже относятся к проверке Django-кода этапа 6.
+
+**Не проверено:** выполнение PowerShell-команд на Windows, сборка/запуск в Docker Desktop Windows, NTFS ACL и ручной сценарий человеком. Эти результаты не выводятся из Linux smoke. Документация не является реализацией следующего этапа.
 
 ## Реализовано в этапе 6
 
