@@ -10,10 +10,10 @@ from django.db.models.functions import Lower, Trim
 def normalize_corporate_email(value):
     normalized = value.strip().lower()
     if not normalized.isascii():
-        raise ValidationError("Используйте корпоративный адрес corp.kp11.ru.")
+        raise ValidationError("Используйте адрес на домене kp11.ru или yandex.ru.")
     validate_email(normalized)
-    if normalized.rsplit("@", 1)[-1] != "corp.kp11.ru":
-        raise ValidationError("Допустим только точный домен corp.kp11.ru.")
+    if normalized.rsplit("@", 1)[-1] not in {"kp11.ru", "yandex.ru"}:
+        raise ValidationError("Допустим только точный домен kp11.ru или yandex.ru.")
     return normalized
 
 
@@ -46,7 +46,10 @@ class User(AbstractBaseUser):
         verbose_name_plural = "сотрудники"
         constraints = [
             models.CheckConstraint(condition=models.Q(email=Lower(Trim("email"))), name="user_email_normalized"),
-            models.CheckConstraint(condition=models.Q(email__endswith="@corp.kp11.ru"), name="user_email_corporate"),
+            models.CheckConstraint(
+                condition=(models.Q(email__endswith="@kp11.ru") | models.Q(email__endswith="@yandex.ru")),
+                name="user_email_corporate",
+            ),
             models.CheckConstraint(condition=models.Q(auth_version__gte=1), name="user_auth_version_positive"),
             models.CheckConstraint(condition=models.Q(version__gte=1), name="user_version_positive"),
         ]

@@ -60,7 +60,7 @@ def run(command):
 run(['exec', '-T', 'web', 'python', 'manage.py', 'shell', '-c', 'from apps.accounts.models import User; assert User.objects.count() == 0'])
 password = 'Smoke-only-' + secrets.token_urlsafe(24)
 tokens = []
-admin_email, manager_email, first_email, second_email = [f'stage4.{name}@corp.kp11.ru' for name in ['admin', 'manager', 'first', 'second']]
+admin_email, manager_email, first_email, second_email = [f'stage4.{name}@kp11.ru' for name in ['admin', 'manager', 'first', 'second']]
 
 def activate(email):
     with urllib.request.urlopen(mailpit + '/api/v1/messages', timeout=5) as response:

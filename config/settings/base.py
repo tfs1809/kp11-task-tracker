@@ -94,7 +94,7 @@ EMAIL_PORT = int(os.environ.get("EMAIL_PORT", "587"))
 EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "")
 EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "")
 EMAIL_TIMEOUT = 10
-DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", "tracker@corp.kp11.ru")
+DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", "tracker@kp11.ru")
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": True,

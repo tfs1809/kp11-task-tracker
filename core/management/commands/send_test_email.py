@@ -17,7 +17,7 @@ class Command(BaseCommand):
         if marker and not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", marker):
             raise CommandError("Недопустимый тестовый маркер.")
         subject = "KP11: проверка среды" + (f" [{marker}]" if marker else "")
-        count = send_mail(subject, "Django доставил тестовое письмо через SMTP.", settings.DEFAULT_FROM_EMAIL, ["environment-check@corp.kp11.ru"], fail_silently=False)
+        count = send_mail(subject, "Django доставил тестовое письмо через SMTP.", settings.DEFAULT_FROM_EMAIL, ["environment-check@kp11.ru"], fail_silently=False)
         if count != 1:
             raise CommandError("SMTP не подтвердил отправку.")
         self.stdout.write("SMTP подтвердил отправку одного development-письма.")

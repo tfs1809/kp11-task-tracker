@@ -19,7 +19,7 @@ from apps.audit.models import AuditEntry
 from apps.audit.services import record_action
 
 
-def employee(email="employee@corp.kp11.ru", verified=True):
+def employee(email="employee@kp11.ru", verified=True):
     return User.objects.create_user(
         email=email, full_name="Тестовый сотрудник", password=None,
         email_verified_at=timezone.now() if verified else None,
@@ -28,19 +28,23 @@ def employee(email="employee@corp.kp11.ru", verified=True):
 
 class UserSchemaTests(TestCase):
     def test_corporate_normalization_and_unique_email(self):
-        user = employee(" Employee@CORP.KP11.RU ")
-        self.assertEqual(user.email, "employee@corp.kp11.ru")
+        user = employee(" Employee@KP11.RU ")
+        self.assertEqual(user.email, "employee@kp11.ru")
         self.assertFalse(user.has_usable_password())
         with self.assertRaises(ValidationError):
-            employee("EMPLOYEE@corp.kp11.ru")
+            employee("EMPLOYEE@kp11.ru")
+
+    def test_yandex_domain_is_allowed_and_normalized(self):
+        user = employee(" Person@YANDEX.RU ")
+        self.assertEqual(user.email, "person@yandex.ru")
 
     def test_similar_and_subdomains_rejected(self):
-        for address in ["name@sub.corp.kp11.ru", "name@corp.kp11.ru.example.org", "name@сorp.kp11.ru", "not-an-address"]:
+        for address in ["name@sub.corp.kp11.ru", "name@kp11.ru.example.org", "name@сorp.kp11.ru", "not-an-address"]:
             with self.subTest(address=address), self.assertRaises(ValidationError):
                 normalize_corporate_email(address)
 
     def test_database_rejects_unnormalized_and_foreign_email(self):
-        for email in ["NAME@corp.kp11.ru", "name@example.org"]:
+        for email in ["NAME@kp11.ru", "name@corp.kp11.ru", "name@example.org"]:
             with self.subTest(email=email), self.assertRaises(IntegrityError), transaction.atomic():
                 User.objects.create(email=email, full_name="Тест")
 
@@ -67,7 +71,7 @@ class AccessHTTPTests(TestCase):
         response = self.client.get("/accounts/login/")
         self.assertContains(response, "Доступ только по приглашению администратора")
         self.assertEqual(response["Cache-Control"], "no-store")
-        self.assertNotContains(response, "employee@corp.kp11.ru")
+        self.assertNotContains(response, "employee@kp11.ru")
 
     def test_anonymous_json_returns_401(self):
         self.assertEqual(self.client.get("/", HTTP_ACCEPT="application/json").status_code, 401)
@@ -78,7 +82,7 @@ class AccessHTTPTests(TestCase):
         self.assertEqual(response.status_code, 400)
 
     def test_verified_server_session_reads_only_own_profile(self):
-        other = employee("other@corp.kp11.ru")
+        other = employee("other@kp11.ru")
         other.full_name = "Другой сотрудник"
         other.save()
         self.login_session()

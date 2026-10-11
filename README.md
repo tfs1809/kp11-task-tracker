@@ -59,10 +59,10 @@ docker compose exec -T web python manage.py collectstatic --noinput
 
 ## Первый администратор и ручная проверка этапа 2
 
-На обычной development-БД первый администратор намеренно не создан. Запустите локальную команду, указав свой точный корпоративный адрес и ФИО:
+На обычной development-БД первый администратор намеренно не создан. Разрешены только точные домены `kp11.ru` и `yandex.ru`. Укажите адрес первого администратора и ФИО во время запуска:
 
 ```bash
-read -r -p 'Почта первого администратора (corp.kp11.ru): ' bootstrap_email
+read -r -p 'Почта первого администратора (kp11.ru или yandex.ru): ' bootstrap_email
 read -r -p 'ФИО первого администратора: ' bootstrap_name
 docker compose exec -T web python manage.py bootstrap_admin --email "$bootstrap_email" --full-name "$bootstrap_name"
 ```

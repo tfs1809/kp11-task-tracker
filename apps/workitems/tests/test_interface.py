@@ -15,7 +15,7 @@ class InterfaceTests(IssuanceFixture, TestCase):
         self.manager.save(update_fields=['full_name'])
         self.item, _ = self.issue(payload={**self.payload, 'title': 'Ближайшая задача', 'due_at': '2020-01-01T20:59:59+00:00'})
         self.event, _ = self.issue(request_key=uuid.uuid4(), payload={**self.payload, 'kind': 'event', 'title': 'Дальнее событие', 'due_at': '2030-01-01T20:59:59+00:00', 'event_at': '2029-12-30T12:00:00+00:00'})
-        self.other = employee('unrelated@corp.kp11.ru')
+        self.other = employee('unrelated@kp11.ru')
         self.other.full_name = 'Скрытый исполнитель'
         self.other.invited_at = timezone.now()
         self.other.save()

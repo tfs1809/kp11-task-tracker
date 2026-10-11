@@ -78,7 +78,7 @@ class WorkflowFixture(IssuanceFixture):
         return self.item.assignments.get(user=user)
 
     def second(self, suffix='second'):
-        user = User.objects.create_user(email=f'{suffix}@corp.kp11.ru', full_name='Другой тестовый исполнитель', invited_at=timezone.now(), email_verified_at=timezone.now())
+        user = User.objects.create_user(email=f'{suffix}@kp11.ru', full_name='Другой тестовый исполнитель', invited_at=timezone.now(), email_verified_at=timezone.now())
         return self.add_user(user)
 
 
@@ -330,7 +330,7 @@ class WorkflowTests(WorkflowFixture, TestCase):
         self.assertIsNone(self.assignment.completed_at)
 
     def test_view_all_cannot_mutate_and_edit_all_requires_reading_basis(self):
-        user = User.objects.create_user(email='reader@corp.kp11.ru', full_name='Тестовый читатель', email_verified_at=timezone.now())
+        user = User.objects.create_user(email='reader@kp11.ru', full_name='Тестовый читатель', email_verified_at=timezone.now())
         role = Role.objects.create(key='read-all', name='Чтение всех')
         RolePermission.objects.create(role=role, permission_id='workitems.view_all')
         UserRole.objects.create(user=user, role=role)
@@ -564,8 +564,8 @@ class PopulatedUpgradeTests(TransactionTestCase):
             Item = old.get_model('workitems', 'WorkItem')
             Assigned = old.get_model('workitems', 'Assignment')
             Child = old.get_model('workitems', 'Subtask')
-            admin = Employee.objects.create(email='migration-admin@corp.kp11.ru', full_name='Администратор миграционного теста', password='!', email_verified_at=timezone.now())
-            user = Employee.objects.create(email='migration-user@corp.kp11.ru', full_name='Ранее отключенный сотрудник', password='!', is_active=False, invited_at=timezone.now())
+            admin = Employee.objects.create(email='migration-admin@kp11.ru', full_name='Администратор миграционного теста', password='!', email_verified_at=timezone.now())
+            user = Employee.objects.create(email='migration-user@kp11.ru', full_name='Ранее отключенный сотрудник', password='!', is_active=False, invited_at=timezone.now())
             item = Item.objects.create(author=admin, title='Задание до этапа 4', kind='task', due_at=timezone.now())
             assignment = Assigned.objects.create(work_item=item, user=user, assigned_by=admin)
             Child.objects.create(work_item=item, text='Существующая подзадача', position=1)

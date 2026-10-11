@@ -328,7 +328,7 @@ class RedactedStream:
 
 sys.stderr = RedactedStream()
 run(['exec', '-T', 'web', 'python', 'manage.py', 'shell', '-c', 'from apps.accounts.models import User; assert User.objects.count() == 0'])
-emails = [f'stage6.{name}@corp.kp11.ru' for name in ['admin', 'manager', 'first', 'second']]
+emails = [f'stage6.{name}@kp11.ru' for name in ['admin', 'manager', 'first', 'second']]
 names = ['Администратор проверки', 'Руководитель проверки', 'Первый исполнитель ' + 'ДлинноеФИО' * 20, 'Второй исполнитель проверки']
 employee_paths = {}
 with sync_playwright() as playwright:

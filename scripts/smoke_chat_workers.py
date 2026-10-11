@@ -24,8 +24,8 @@ item = run('''import json, uuid
 from apps.accounts.models import User
 from apps.workitems.services import preview_issue, issue_item
 assert User.objects.count() == 4 and not User.objects.exclude(email__startswith='stage6.').exists()
-actor=User.objects.get(email='stage6.manager@corp.kp11.ru')
-recipient=User.objects.get(email='stage6.first@corp.kp11.ru')
+actor=User.objects.get(email='stage6.manager@kp11.ru')
+recipient=User.objects.get(email='stage6.first@kp11.ru')
 key=uuid.uuid4()
 payload=dict(kind='event',title='Изолированная проверка процессов',description='',due_at='2030-01-03T00:00:00+00:00',event_at='2030-01-02T00:00:00+00:00',subtasks=[],users=[str(recipient.pk)],roles=[],groups=[])
 kwargs=dict(actor_id=actor.pk,auth_version=actor.auth_version,request_key=key,payload=payload)
@@ -40,7 +40,7 @@ from unittest.mock import patch
 from apps.accounts.models import User
 from apps.accounts.limits import RateLimited
 from apps.discussions.services import send
-actor=User.objects.get(email='stage6.manager@corp.kp11.ru')
+actor=User.objects.get(email='stage6.manager@kp11.ru')
 counts=dict(pid=os.getpid(),sent=0,limited=0)
 # Same fixed minute in both processes avoids an accidental wall-clock boundary;
 # buckets, locks, writes, receipts and quotas are real PostgreSQL operations.

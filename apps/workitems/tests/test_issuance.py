@@ -27,10 +27,10 @@ from apps.workitems.services import IssueConflict, PreviewChanged, SALT, issue_i
 class IssuanceFixture:
     def prepare(self):
         seed()
-        self.admin = employee('admin@corp.kp11.ru', admin=True)
-        self.manager = employee('manager@corp.kp11.ru')
+        self.admin = employee('admin@kp11.ru', admin=True)
+        self.manager = employee('manager@kp11.ru')
         UserRole.objects.create(user=self.manager, role=Role.objects.get(key='manager'))
-        self.recipient = employee('recipient@corp.kp11.ru')
+        self.recipient = employee('recipient@kp11.ru')
         self.recipient.full_name = 'Получатель пересечений'
         self.recipient.invited_at = timezone.now()
         self.recipient.save()
@@ -80,7 +80,7 @@ class IssuanceTests(IssuanceFixture, TestCase):
         self.assertEqual(MutationReceipt.objects.count(), 1)
 
     def test_role_and_group_union_includes_distinct_members(self):
-        second = User.objects.create_user(email='pending@corp.kp11.ru', full_name='Ожидает активации', invited_at=timezone.now())
+        second = User.objects.create_user(email='pending@kp11.ru', full_name='Ожидает активации', invited_at=timezone.now())
         Membership.objects.create(user=second, group=self.groups[0])
         preview = self.preview()
         self.assertEqual({row['id'] for row in preview['recipients']}, {str(self.recipient.pk), str(second.pk)})
@@ -88,8 +88,8 @@ class IssuanceTests(IssuanceFixture, TestCase):
         self.assertEqual(item.assignments.count(), 2)
 
     def test_uninvited_and_inactive_are_excluded(self):
-        inactive = User.objects.create_user(email='inactive@corp.kp11.ru', full_name='Отключенный', is_active=False, invited_at=timezone.now())
-        unknown = User.objects.create_user(email='unknown@corp.kp11.ru', full_name='Не приглашенный')
+        inactive = User.objects.create_user(email='inactive@kp11.ru', full_name='Отключенный', is_active=False, invited_at=timezone.now())
+        unknown = User.objects.create_user(email='unknown@kp11.ru', full_name='Не приглашенный')
         for user in (inactive, unknown):
             Membership.objects.create(user=user, group=self.groups[0])
         self.assertEqual(len(self.preview()['recipients']), 1)
@@ -111,7 +111,7 @@ class IssuanceTests(IssuanceFixture, TestCase):
         item, _ = self.issue()
         original = item.assignments.get()
         self.edit(self.recipient, role_ids=[], group_ids=[])
-        second = User.objects.create_user(email='second@corp.kp11.ru', full_name='Новый член', invited_at=timezone.now())
+        second = User.objects.create_user(email='second@kp11.ru', full_name='Новый член', invited_at=timezone.now())
         Membership.objects.create(user=second, group=self.groups[0])
         original_group_name = self.groups[0].name
         self.groups[0].name = 'Переименованная группа'
@@ -124,7 +124,7 @@ class IssuanceTests(IssuanceFixture, TestCase):
 
     def test_membership_change_before_confirmation_requires_new_preview(self):
         preview = self.preview()
-        second = User.objects.create_user(email='second@corp.kp11.ru', full_name='Новый получатель', invited_at=timezone.now())
+        second = User.objects.create_user(email='second@kp11.ru', full_name='Новый получатель', invited_at=timezone.now())
         Membership.objects.create(user=second, group=self.groups[0])
         with self.assertRaises(PreviewChanged) as caught:
             self.issue(preview)
@@ -409,7 +409,7 @@ class IssuanceConcurrencyTests(IssuanceFixture, TransactionTestCase):
 
     def test_issuance_vs_membership_change_is_serialized(self):
         preview = self.preview()
-        new_user = User.objects.create_user(email='new@corp.kp11.ru', full_name='Новый адресат', invited_at=timezone.now())
+        new_user = User.objects.create_user(email='new@kp11.ru', full_name='Новый адресат', invited_at=timezone.now())
         results = self.race([lambda: self.issue(preview), lambda: self.edit(new_user, group_ids=[self.groups[0].pk])])
         self.assertEqual(len(results), 2)
         if WorkItem.objects.exists():

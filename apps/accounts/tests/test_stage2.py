@@ -35,7 +35,7 @@ def seed():
     importlib.import_module('apps.access.migrations.0004_seed_and_protection').seed(apps, None)
 
 
-def employee(email='employee@corp.kp11.ru', admin=False):
+def employee(email='employee@kp11.ru', admin=False):
     user = User.objects.create_user(email=email, full_name='Тестовый сотрудник', password=PASSWORD, email_verified_at=timezone.now())
     if admin:
         UserRole.objects.create(user=user, role=Role.objects.get(is_system_admin=True))
@@ -57,10 +57,10 @@ def latest_token():
 class StageTwoTests(TestCase):
     def setUp(self):
         seed()
-        self.admin = employee('admin@corp.kp11.ru', admin=True)
+        self.admin = employee('admin@kp11.ru', admin=True)
         self.actor = dict(actor_id=self.admin.pk, auth_version=self.admin.auth_version)
 
-    def invitation(self, email='invitee@corp.kp11.ru'):
+    def invitation(self, email='invitee@kp11.ru'):
         with self.captureOnCommitCallbacks(execute=True):
             user, delivery = invite_employee(**self.actor, email=email, full_name='Приглашенный сотрудник')
         self.assertTrue(delivery.sent)
@@ -117,16 +117,16 @@ class StageTwoTests(TestCase):
             cursor.execute('RESET ROLE')
 
     def test_invitation_normalizes_reserves_email_and_has_no_password(self):
-        user, token = self.invitation(' Mixed@CORP.KP11.RU ')
-        self.assertEqual(user.email, 'mixed@corp.kp11.ru')
+        user, token = self.invitation(' Mixed@KP11.RU ')
+        self.assertEqual(user.email, 'mixed@kp11.ru')
         self.assertFalse(user.has_usable_password())
         self.assertIsNone(authenticate(email=user.email, password=PASSWORD))
         with self.assertRaises(ValidationError):
-            self.invitation('MIXED@corp.kp11.ru')
+            self.invitation('MIXED@kp11.ru')
         stored = Invitation.objects.get(user=user)
         self.assertNotEqual(stored.token_digest, token)
         self.assertNotIn(token, json.dumps(list(AuditEntry.objects.values('changes'))))
-        for address in ['x@sub.corp.kp11.ru', 'x@corp.kp11.ru.evil.test', 'x@example.org']:
+        for address in ['x@sub.corp.kp11.ru', 'x@kp11.ru.evil.test', 'x@example.org']:
             with self.assertRaises(ValidationError):
                 invite_employee(**self.actor, email=address, full_name='Тест')
 
@@ -164,7 +164,7 @@ class StageTwoTests(TestCase):
 
     def test_smtp_failure_preserves_invite_and_explicit_resend(self):
         with patch('apps.accounts.services.send_mail', side_effect=RuntimeError('secret-not-to-log')), self.captureOnCommitCallbacks(execute=True):
-            user, delivery = invite_employee(**self.actor, email='retry@corp.kp11.ru', full_name='Повтор')
+            user, delivery = invite_employee(**self.actor, email='retry@kp11.ru', full_name='Повтор')
         self.assertFalse(delivery.sent)
         self.assertTrue(Invitation.objects.filter(user=user).exists())
         with self.captureOnCommitCallbacks(execute=True):
@@ -175,12 +175,12 @@ class StageTwoTests(TestCase):
     def test_bootstrap_single_use_and_pending_resend_no_public_route(self):
         # Existing admin forbids bootstrap; no HTTP shortcut exists.
         with self.assertRaises(ValidationError):
-            bootstrap_administrator(email='bootstrap@corp.kp11.ru', full_name='Первый')
+            bootstrap_administrator(email='bootstrap@kp11.ru', full_name='Первый')
         self.assertEqual(self.client.get('/accounts/bootstrap/').status_code, 404)
         self.assertEqual(self.client.get('/accounts/register/').status_code, 404)
 
     def test_login_logout_csrf_safe_redirect_and_session_epoch(self):
-        response = self.client.post('/accounts/login/', {'email':' ADMIN@CORP.KP11.RU ', 'password':PASSWORD, 'next':'https://evil.test/'})
+        response = self.client.post('/accounts/login/', {'email':' ADMIN@KP11.RU ', 'password':PASSWORD, 'next':'https://evil.test/'})
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response.url, '/')
         self.assertEqual(self.client.session['auth_version'], self.admin.auth_version)
@@ -191,7 +191,7 @@ class StageTwoTests(TestCase):
         self.assertEqual(self.client.get('/').status_code, 302)
 
     def test_disable_and_role_revocation_apply_to_open_session(self):
-        second = employee('second@corp.kp11.ru', admin=True)
+        second = employee('second@kp11.ru', admin=True)
         client = Client();force_login(client, second)
         self.assertEqual(client.get('/administration/').status_code, 200)
         self.edit(second, role_ids=[])
@@ -225,12 +225,12 @@ class StageTwoTests(TestCase):
 
     def test_direct_post_and_service_cannot_escalate_privileges(self):
         user = employee();force_login(self.client, user)
-        for path, payload in [('/administration/invite/', {'email':'attacker@corp.kp11.ru', 'full_name':'Атакующий'}), ('/administration/roles/new/', {'name':'Обход','permissions':['access.manage_roles']}), ('/administration/groups/new/', {'name':'Обход'}), (f'/administration/employees/{user.pk}/', {'full_name':'Атакующий','is_active':'on','version':user.version,'roles':[str(Role.objects.get(is_system_admin=True).pk)]})]:
+        for path, payload in [('/administration/invite/', {'email':'attacker@kp11.ru', 'full_name':'Атакующий'}), ('/administration/roles/new/', {'name':'Обход','permissions':['access.manage_roles']}), ('/administration/groups/new/', {'name':'Обход'}), (f'/administration/employees/{user.pk}/', {'full_name':'Атакующий','is_active':'on','version':user.version,'roles':[str(Role.objects.get(is_system_admin=True).pk)]})]:
             self.assertEqual(self.client.post(path, payload).status_code, 403)
         with self.assertRaises(PermissionDenied):
-            invite_employee(actor_id=user.pk, auth_version=user.auth_version, email='another@corp.kp11.ru', full_name='Тест')
+            invite_employee(actor_id=user.pk, auth_version=user.auth_version, email='another@kp11.ru', full_name='Тест')
         self.assertFalse(user.user_roles.exists())
-        self.assertFalse(User.objects.filter(email='attacker@corp.kp11.ru').exists())
+        self.assertFalse(User.objects.filter(email='attacker@kp11.ru').exists())
 
     def test_versions_conflict_preserves_input_and_changes_audited(self):
         target = employee()
@@ -251,8 +251,8 @@ class StageTwoTests(TestCase):
     def test_revocation_during_invalid_post_prevents_profile_render(self):
         from apps.accounts.forms import EmployeeForm
 
-        second=employee('second@corp.kp11.ru',admin=True)
-        target=employee('private@corp.kp11.ru')
+        second=employee('second@kp11.ru',admin=True)
+        target=employee('private@kp11.ru')
         force_login(self.client,self.admin)
         def revoke_before_validation(*args,**kwargs):
             edit_employee(actor_id=second.pk,auth_version=second.auth_version,user_id=self.admin.pk,expected_version=self.admin.version,full_name=self.admin.full_name,is_active=True,role_ids=[],group_ids=[])
@@ -269,13 +269,13 @@ class StageTwoTests(TestCase):
         self.assertEqual(response.status_code,302)
         self.assertEqual(self.client.post('/administration/groups/new/', {'name':'Новая группа','is_active':'on'}).status_code,302)
         with self.assertRaises(DatabaseError),transaction.atomic():
-            User.objects.filter(pk=self.admin.pk).update(email='changed@corp.kp11.ru')
+            User.objects.filter(pk=self.admin.pk).update(email='changed@kp11.ru')
 
     def test_generic_recovery_no_leak_for_unknown_inactive_or_unverified(self):
-        inactive=employee('inactive@corp.kp11.ru');inactive.is_active=False;inactive.save()
-        unverified=User.objects.create_user(email='pending@corp.kp11.ru',full_name='Ожидает')
+        inactive=employee('inactive@kp11.ru');inactive.is_active=False;inactive.save()
+        unverified=User.objects.create_user(email='pending@kp11.ru',full_name='Ожидает')
         responses=[]
-        for email in [self.admin.email,'unknown@corp.kp11.ru',inactive.email,unverified.email,'foreign@example.org']:
+        for email in [self.admin.email,'unknown@kp11.ru',inactive.email,unverified.email,'foreign@example.org']:
             with self.captureOnCommitCallbacks(execute=True):
                 responses.append(self.client.post('/accounts/recovery/', {'email':email}))
         self.assertEqual({r.status_code for r in responses},{200})
@@ -356,11 +356,11 @@ class StageTwoTests(TestCase):
 
     def test_limits_apply_normalized_address_and_recovery_generic(self):
         for attempt in range(5):
-            self.assertEqual(self.client.post('/accounts/login/', {'email':' ADMIN@CORP.KP11.RU ','password':'wrong'}).status_code,400)
+            self.assertEqual(self.client.post('/accounts/login/', {'email':' ADMIN@KP11.RU ','password':'wrong'}).status_code,400)
         response=self.client.post('/accounts/login/', {'email':self.admin.email,'password':PASSWORD})
         self.assertEqual(response.status_code,429);self.assertIn('Retry-After',response)
-        for attempt in range(3):self.assertEqual(self.client.post('/accounts/recovery/',{'email':'unknown@corp.kp11.ru'}).status_code,200)
-        self.assertEqual(self.client.post('/accounts/recovery/',{'email':' UNKNOWN@CORP.KP11.RU '}).status_code,429)
+        for attempt in range(3):self.assertEqual(self.client.post('/accounts/recovery/',{'email':'unknown@kp11.ru'}).status_code,200)
+        self.assertEqual(self.client.post('/accounts/recovery/',{'email':' UNKNOWN@KP11.RU '}).status_code,429)
         self.assertFalse(RateLimitBucket.objects.filter(key_digest__contains='admin').exists())
 
 
@@ -394,7 +394,7 @@ class StageTwoConcurrencyTests(TransactionTestCase):
         return results
 
     def test_smtp_callback_runs_after_guard_commit(self):
-        admin=employee('admin@corp.kp11.ru',admin=True)
+        admin=employee('admin@kp11.ru',admin=True)
         from apps.access.services import guarded_transaction
         observed=[]
         def smtp(*args,**kwargs):
@@ -409,12 +409,12 @@ class StageTwoConcurrencyTests(TransactionTestCase):
             self.assertEqual(observed,[True])
             return 1
         with patch('apps.accounts.services.send_mail',side_effect=smtp):
-            _,outcome=invite_employee(actor_id=admin.pk,auth_version=1,email='outside@corp.kp11.ru',full_name='Вне блокировки')
+            _,outcome=invite_employee(actor_id=admin.pk,auth_version=1,email='outside@kp11.ru',full_name='Вне блокировки')
         self.assertTrue(outcome.sent)
 
     def test_concurrent_activation_exactly_once(self):
-        admin=employee('admin@corp.kp11.ru',admin=True)
-        user,delivery=invite_employee(actor_id=admin.pk,auth_version=1,email='invited@corp.kp11.ru',full_name='Приглашенный')
+        admin=employee('admin@kp11.ru',admin=True)
+        user,delivery=invite_employee(actor_id=admin.pk,auth_version=1,email='invited@kp11.ru',full_name='Приглашенный')
         self.assertTrue(delivery.sent);token=latest_token()
         results=self.concurrent_password_posts('/accounts/activate/',token,PASSWORD)
         self.assertEqual(sorted(results),['ValidationError','ok'])
@@ -441,8 +441,8 @@ class StageTwoConcurrencyTests(TransactionTestCase):
         return self.concurrent([post(client) for client in clients])
 
     def assert_admin_race(self, remove_role):
-        first=employee('first@corp.kp11.ru',admin=True)
-        second=employee('second@corp.kp11.ru',admin=True)
+        first=employee('first@kp11.ru',admin=True)
+        second=employee('second@kp11.ru',admin=True)
         def disable(user):
             return lambda:edit_employee(actor_id=user.pk,auth_version=user.auth_version,user_id=user.pk,expected_version=user.version,full_name=user.full_name,is_active=remove_role,role_ids=[] if remove_role else list(user.user_roles.values_list('role_id',flat=True)),group_ids=[])
         results=self.concurrent([disable(first),disable(second)])
@@ -464,19 +464,19 @@ class StageTwoConcurrencyTests(TransactionTestCase):
         self.assertEqual(RateLimitBucket.objects.get().count,5)
 
     def test_bootstrap_once_pending_resend_and_after_activation_forbidden(self):
-        outcome=bootstrap_administrator(email='first@corp.kp11.ru',full_name='Первый')
+        outcome=bootstrap_administrator(email='first@kp11.ru',full_name='Первый')
         self.assertTrue(outcome.sent)
         old=latest_token()
-        outcome=bootstrap_administrator(email='first@corp.kp11.ru',full_name='Первый',resend=True)
+        outcome=bootstrap_administrator(email='first@kp11.ru',full_name='Первый',resend=True)
         self.assertTrue(outcome.sent)
         with self.assertRaises(ValidationError):activate_employee(token=old,password=PASSWORD)
         activate_employee(token=latest_token(),password=PASSWORD)
-        with self.assertRaises(ValidationError):bootstrap_administrator(email='other@corp.kp11.ru',full_name='Другой')
+        with self.assertRaises(ValidationError):bootstrap_administrator(email='other@kp11.ru',full_name='Другой')
         self.assertEqual(AuditEntry.objects.filter(action='accounts.bootstrap_started').count(),1)
 
     def test_concurrent_resend_and_activation_consistent(self):
-        admin=employee('admin@corp.kp11.ru',admin=True)
-        user,_=invite_employee(actor_id=admin.pk,auth_version=1,email='invite@corp.kp11.ru',full_name='Приглашенный')
+        admin=employee('admin@kp11.ru',admin=True)
+        user,_=invite_employee(actor_id=admin.pk,auth_version=1,email='invite@kp11.ru',full_name='Приглашенный')
         token=latest_token()
         results=self.concurrent([lambda:activate_employee(token=token,password=PASSWORD),lambda:resend_invitation(actor_id=admin.pk,auth_version=1,user_id=user.pk)])
         user.refresh_from_db()
@@ -488,8 +488,8 @@ class StageTwoConcurrencyTests(TransactionTestCase):
             activate_employee(token=latest_token(),password=PASSWORD)
 
     def test_concurrent_system_role_disable_and_admin_disable_cannot_remove_all(self):
-        admin=employee('admin@corp.kp11.ru',admin=True)
-        other=employee('other@corp.kp11.ru',admin=True)
+        admin=employee('admin@kp11.ru',admin=True)
+        other=employee('other@kp11.ru',admin=True)
         role=Role.objects.get(is_system_admin=True)
         results=self.concurrent([
             lambda:save_role(actor_id=admin.pk,auth_version=1,role_id=role.pk,expected_version=role.version,name=role.name,is_active=False,permission_codes=list(PERMISSIONS)),

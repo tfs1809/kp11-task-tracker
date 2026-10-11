@@ -6,6 +6,12 @@
 
 Проверены исходная ветка/опубликованный SHA и связи кода с Django, документация назначения a2wsgi.ASGIMiddleware, diff инфраструктуры и миграций относительно abb3577. `git diff --check` — exit 0; проверена 31 локальная ссылка документации; diff всех application/infra/migration/lock файлов — пустой. Изменения текущего шага только в документации: код, dependencies/lockfiles, Compose/Docker/settings/.env, модели, миграции и рабочие данные не менялись. FastAPI не установлен/не запущен, соответствующие тесты не выполнялись. Результаты 162 серверных и 16 browser tests ниже — исторические проверки Django, не подтверждение переноса. M1 остается технической проверкой применимости адаптера при неизменной инфраструктуре.
 
+## Уточнение email-доменов после создания плана
+
+На ветке `feat/fastapi-migration` по отдельному запросу изменены правила email: принимаются только точные домены `kp11.ru` и `yandex.ru` без учета регистра; `corp.kp11.ru`, поддомены и похожие домены отклоняются. Старая миграция `0001_initial` не переписывалась: добавлена forward-миграция `apps/accounts/migrations/0003_allow_kp11_and_yandex_email_domains.py`, заменяющая PostgreSQL CHECK-констрейнт. Инфраструктура и lock-файлы не менялись. Первый администратор по-прежнему создается только явной bootstrap-командой; адрес вводится при запуске и не зашит в код/данные.
+
+Проверено 11.10.2026 в Linux cloud-среде после сборки web-образа через `BUILDX_CONFIG` и `compose.cloud.yaml`: `docker compose run --rm migrate` применил `0003`, `docker compose run --rm tests` — **163 теста, 163 passed, 0 failures/errors/skipped** (120.261 секунды), включая отдельный тест нормализации `yandex.ru`; `check --database default`, `makemigrations --check --dry-run`, `pip check`, `compileall` и `scripts/smoke.py` завершились успешно. Windows/Docker Desktop, FastAPI runtime и реальный вход указанного администратора не проверялись.
+
 ## Последняя проверенная реализация Django
 
 Обновлено: 11.10.2026 01:36 Москва.

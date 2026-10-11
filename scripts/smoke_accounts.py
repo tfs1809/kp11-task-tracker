@@ -31,9 +31,9 @@ result = run(['exec','-T','web','python','manage.py','shell','-c','from apps.acc
 assert 'empty isolated database OK' in result.stdout
 password = 'Smoke-only-' + secrets.token_urlsafe(24)
 new_password = 'Smoke-only-new-' + secrets.token_urlsafe(24)
-admin_email = 'stage2.first@corp.kp11.ru'
-second_email = 'stage2.second@corp.kp11.ru'
-employee_email = 'stage2.employee@corp.kp11.ru'
+admin_email = 'stage2.first@kp11.ru'
+second_email = 'stage2.second@kp11.ru'
+employee_email = 'stage2.employee@kp11.ru'
 
 
 def mail_token(email):

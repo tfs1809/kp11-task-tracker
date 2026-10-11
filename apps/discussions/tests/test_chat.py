@@ -45,7 +45,7 @@ class ChatFixture(IssuanceFixture):
         return services.close(**(dict(actor_id=actor.pk, auth_version=actor.auth_version, item_id=self.item.pk, expected_version=self.item.version) | overrides))
 
     def privileged(self, codes):
-        user = employee(f'{uuid.uuid4()}@corp.kp11.ru')
+        user = employee(f'{uuid.uuid4()}@kp11.ru')
         role = Role.objects.create(key=str(uuid.uuid4()), name=f'Роль {uuid.uuid4()}')
         UserRole.objects.create(user=user, role=role)
         for code in codes:

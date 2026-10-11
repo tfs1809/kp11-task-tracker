@@ -31,10 +31,10 @@ def run(command):
 run(['exec', '-T', 'web', 'python', 'manage.py', 'shell', '-c', 'from apps.accounts.models import User; from apps.workitems.models import WorkItem; assert User.objects.count() == 0 and WorkItem.objects.count() == 0'])
 password = 'Smoke-only-' + secrets.token_urlsafe(24)
 tokens = []
-admin_email = 'stage3.admin@corp.kp11.ru'
-manager_email = 'stage3.manager@corp.kp11.ru'
-recipient_email = 'stage3.recipient@corp.kp11.ru'
-observer_email = 'stage3.observer@corp.kp11.ru'
+admin_email = 'stage3.admin@kp11.ru'
+manager_email = 'stage3.manager@kp11.ru'
+recipient_email = 'stage3.recipient@kp11.ru'
+observer_email = 'stage3.observer@kp11.ru'
 
 
 def activate(email):
