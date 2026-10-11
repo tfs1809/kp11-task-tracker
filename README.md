@@ -11,12 +11,15 @@ docker compose -f compose.yaml -f compose.cloud.yaml build web migrate tests
 docker compose up -d --wait db mailpit
 docker compose run --rm migrate
 docker compose up -d --wait web
+docker compose exec web python scripts/bootstrap_admin.py --email egorovasv@kp11.ru --full-name "Егорова СВ админ"
 python3 scripts/smoke.py
 docker compose exec -T web python scripts/smoke_auth.py
 docker compose exec -T web python scripts/smoke_admin.py
 ```
 
 Откройте http://127.0.0.1:8000/. Mailpit доступен на http://127.0.0.1:8025/.
+
+При первом запуске bootstrap отправляет приглашение администратора в Mailpit. Откройте письмо, перейдите по ссылке и задайте пароль. Повторный запуск после активации запрещен.
 
 ## Проверки
 
