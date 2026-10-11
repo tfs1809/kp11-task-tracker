@@ -39,7 +39,7 @@ services:
       DB_MIGRATOR_PASSWORD: ${DB_MIGRATOR_PASSWORD:?Run python3 scripts/init_dev_env.py}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./docker/postgres/init.sh:/docker-entrypoint-initdb.d/10-roles.sh:ro
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/10-roles.sql:ro
     healthcheck:
       test: [CMD-SHELL, 'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
       interval: 3s
