@@ -1,0 +1,74 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="system-shell">
+  <header class="system-heading">
+    <div><h1>СИСТЕМА</h1><p>Управление пользователями, ролями, правами и составом групп.</p></div>
+    <span class="system-badge">Администратор</span>
+  </header>
+
+  <div class="system-grid">
+    <div class="system-column">
+      <section class="system-panel users-panel">
+        <div class="system-panel-inner">
+          <div class="system-panel-title"><h2>ПОЛЬЗОВАТЕЛИ<span class="system-accessibility-label">Сотрудники</span></h2><span>Всего: {{ users|length }}</span></div>
+          <input class="system-search" type="search" placeholder="поиск по ФИО или почте . . ." data-system-search>
+          <div class="system-user-head"><span>ФИО / почта (логин)</span><span>Назначенные роли</span><span>Группы</span><span>Действия</span></div>
+          <div class="system-user-list">
+            {% for item in users %}
+            <article class="system-user-row {% if selected_user and selected_user.id == item.id %}is-selected{% endif %}" data-system-user data-search-text="{{ item.full_name }} {{ item.email }}">
+              <div><a href="/accounts/system/?selected_user={{ item.id }}" class="system-user-name">{{ item.full_name }}</a><small>{{ item.email }}</small>{% if not item.is_active %}<em>Отключён</em>{% elif not item.email_verified_at %}<em>Ожидает активации</em>{% endif %}</div>
+              <div class="system-pills">{% for role in item.roles %}<span>{{ role.name }}</span>{% else %}<small>Без ролей</small>{% endfor %}</div>
+              <div class="system-groups">{% for group in item.groups %}<span>{{ group.name }}</span>{% else %}<small>Без групп</small>{% endfor %}</div>
+              <div class="system-user-actions"><a href="#role-editor">Роли</a>{% if not item.roles|selectattr('is_system_admin')|list %}<form method="post" action="/accounts/system/users/{{ item.id }}/delete/" data-confirm-delete="Вы уверены, что хотите удалить {{ item.full_name }}? Это удалит пользователя, его задачи-авторства, сообщения и назначения исполнителя."><input type="hidden" name="csrf_token" value="{{ csrf }}"><button type="submit" class="link-danger">Удалить</button></form>{% else %}<small>Администратор</small>{% endif %}</div>
+            </article>
+            {% else %}<p class="muted">Пользователей пока нет.</p>{% endfor %}
+          </div>
+          <div class="system-divider"></div>
+          <h2>ДОБАВИТЬ ПОЛЬЗОВАТЕЛЯ</h2>
+          <form method="post" action="/accounts/system/users/add/" class="system-inline-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf }}">
+            <label>ФИО *<input name="full_name" required></label>
+            <label>ПОЧТА (ЛОГИН) *<input name="email" type="email" required></label>
+            <button type="submit">ДОБАВИТЬ</button>
+          </form>
+          <p class="system-footnote">* Обязательные поля. Пользователь получит письмо для активации.</p>
+        </div>
+      </section>
+
+      {% if selected_user %}
+      <section class="system-panel" id="role-editor">
+        <div class="system-panel-inner">
+          <h2>ИЗМЕНИТЬ РОЛИ</h2><p>{{ selected_user.full_name }}</p>
+          <form method="post" action="/accounts/system/users/{{ selected_user.id }}/roles/" class="role-check-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf }}">
+            {% for role in roles if not role.is_system_admin %}<label><input type="checkbox" name="role_ids" value="{{ role.id }}" {% if role.id in selected_user.role_ids %}checked{% endif %}> <span>{{ role.name }}</span></label>{% endfor %}
+            <button type="submit">СОХРАНИТЬ РОЛИ</button>
+          </form>
+        </div>
+      </section>
+      {% endif %}
+
+      <section class="system-panel">
+        <div class="system-panel-inner">
+          <div class="system-panel-title"><h2>РОЛИ И ПРАВА</h2><a href="#permissions">Права</a></div>
+          <form method="post" action="/accounts/system/roles/create/" class="system-inline-form compact-form"><input type="hidden" name="csrf_token" value="{{ csrf }}"><label>Новая роль<input name="name" required></label><button type="submit">СОЗДАТЬ</button></form>
+          <div class="role-list">{% for role in roles %}<article class="role-item"><form method="post" action="/accounts/system/roles/{{ role.id }}/save/"><input type="hidden" name="csrf_token" value="{{ csrf }}"><input name="name" value="{{ role.name }}" {% if role.is_system_admin %}disabled{% endif %}><span>{{ role.member_count }} пользователей</span>{% if not role.is_system_admin %}<button type="submit" class="button secondary">СОХРАНИТЬ</button></form><form method="post" action="/accounts/system/roles/{{ role.id }}/delete/" data-confirm-delete="Удалить роль {{ role.name }}? Роль должна быть пустой."><input type="hidden" name="csrf_token" value="{{ csrf }}"><button type="submit" class="link-danger">Удалить</button></form>{% else %}<small>Защищённая роль администратора</small></form>{% endif %}</article>{% endfor %}</div>
+        </div>
+      </section>
+
+      <section class="system-panel" id="permissions">
+        <div class="system-panel-inner"><h2>ПРАВА РОЛЕЙ</h2><p class="muted">Системная роль администратора защищена.</p>
+          {% for role in roles if not role.is_system_admin %}<form method="post" action="/accounts/system/roles/{{ role.id }}/permissions/" class="permissions-form"><input type="hidden" name="csrf_token" value="{{ csrf }}"><h3>{{ role.name }}</h3><div>{% for permission in all_permissions if not permission.admin_only %}<label><input type="checkbox" name="permission_codes" value="{{ permission.code }}" {% if permission.code in role.permission_codes %}checked{% endif %}> {{ permission.name }}</label>{% endfor %}</div><button type="submit">СОХРАНИТЬ ПРАВА</button></form>{% endfor %}
+        </div>
+      </section>
+    </div>
+
+    <div class="system-column">
+      <section class="system-panel groups-panel"><div class="system-panel-inner"><div class="system-panel-title"><h2>ВСЕ ГРУППЫ</h2><span>Всего: {{ groups|length }}</span></div><div class="system-group-list">{% for group in groups %}<a href="#group-{{ group.id }}"><span>{{ group.name }}</span><small>{{ group.member_count }} участника</small></a>{% else %}<p class="muted">Групп пока нет.</p>{% endfor %}</div></div></section>
+      {% for group in groups %}<section class="system-panel" id="group-{{ group.id }}"><div class="system-panel-inner"><h2>ГРУППА</h2><form method="post" action="/accounts/system/groups/{{ group.id }}/save/" class="system-inline-form compact-form"><input type="hidden" name="csrf_token" value="{{ csrf }}"><input name="name" value="{{ group.name }}" required><button type="submit">СОХРАНИТЬ</button></form><form method="post" action="/accounts/system/groups/{{ group.id }}/members/add/" class="group-add-form"><input type="hidden" name="csrf_token" value="{{ csrf }}"><label>ПОЛЬЗОВАТЕЛЬ<select name="user_id" required><option value="">Выберите пользователя</option>{% for item in users %}<option value="{{ item.id }}">{{ item.full_name }}</option>{% endfor %}</select></label><button type="submit">ДОБАВИТЬ В ГРУППУ</button></form><div class="system-divider"></div><p class="group-members-title">Сейчас в {{ group.name }} · {{ group.member_count }} участника</p>{% for member in group.members %}<div class="group-member"><span>{{ member.full_name }}</span><form method="post" action="/accounts/system/groups/{{ group.id }}/members/{{ member.id }}/delete/"><input type="hidden" name="csrf_token" value="{{ csrf }}"><button type="submit" class="link-danger">Убрать</button></form></div>{% else %}<p class="muted">Участников нет.</p>{% endfor %}<form method="post" action="/accounts/system/groups/{{ group.id }}/delete/" data-confirm-delete="Удалить группу {{ group.name }}? Группа должна быть пустой."><input type="hidden" name="csrf_token" value="{{ csrf }}"><button type="submit" class="link-danger">Удалить группу</button></form></div></section>{% endfor %}
+      <section class="system-panel"><div class="system-panel-inner"><h2>СОЗДАТЬ ГРУППУ</h2><form method="post" action="/accounts/system/groups/create/" class="system-inline-form compact-form"><input type="hidden" name="csrf_token" value="{{ csrf }}"><input name="name" required placeholder="Название группы"><button type="submit">СОЗДАТЬ</button></form></div></section>
+    </div>
+  </div>
+</div>
+{% endblock %}

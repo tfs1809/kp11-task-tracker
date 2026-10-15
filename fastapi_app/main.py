@@ -4,6 +4,8 @@ from datetime import datetime, timedelta, timezone
 import hashlib
 import hmac
 import os
+import re
+import unicodedata
 from pathlib import Path
 from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
@@ -66,6 +68,7 @@ def _page(template, request, **values):
             permissions=permission_set,
             can_create="workitems.create" in permission_set,
             can_issue=bool(permission_set.intersection({"workitems.view_own", "workitems.view_all", "workitems.create"})),
+            can_system=is_admin,
             **values,
         )
     )
@@ -155,12 +158,134 @@ def _date_control_values(value):
 def _issue_values(form):
     values = {key: str(form.get(key, "")) for key in ("title", "description", "kind", "due_at", "event_at", "due_date", "due_time", "event_date", "event_time")}
     values["assignee_ids"] = [str(value) for value in form.getlist("assignee_ids")]
+    values["role_ids"] = [str(value) for value in form.getlist("role_ids")]
+    values["group_ids"] = [str(value) for value in form.getlist("group_ids")]
     values["subtasks"] = [str(value).strip() for value in form.getlist("subtasks")]
     return values
 
 
 def _employees(conn):
     return many(conn, "SELECT id,full_name,email FROM accounts_user WHERE is_active AND email_verified_at IS NOT NULL ORDER BY full_name,email")
+
+
+def _system_admin(conn, user_id):
+    return one(conn, """
+        SELECT 1 FROM access_userrole ur
+        JOIN access_role r ON r.id=ur.role_id AND r.is_active AND r.is_system_admin
+        WHERE ur.user_id=%s
+    """, (user_id,)) is not None
+
+
+def _require_system_admin(request):
+    actor = _require_user(request)
+    if not actor:
+        return None
+    with connection() as conn:
+        if not _system_admin(conn, actor["id"]):
+            return False
+    return actor
+
+
+def _role_key(conn, name):
+    base = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode("ascii").lower()
+    base = re.sub(r"[^a-z0-9]+", "-", base).strip("-")[:60]
+    base = base or "role"
+    candidate = base
+    number = 2
+    while one(conn, "SELECT 1 FROM access_role WHERE key=%s", (candidate,)):
+        suffix = f"-{number}"
+        candidate = f"{base[:80-len(suffix)]}{suffix}"
+        number += 1
+    return candidate
+
+
+def _audience_options(conn):
+    return (
+        _employees(conn),
+        many(conn, "SELECT id,name FROM access_role WHERE is_active AND NOT is_system_admin ORDER BY name"),
+        many(conn, "SELECT id,name FROM access_group WHERE is_active ORDER BY name"),
+    )
+
+
+def _resolve_audience(conn, user_ids, role_ids, group_ids):
+    """Expand role/group targets once; returned users are the fixed assignments."""
+    selected = set(user_ids)
+    if role_ids:
+        selected.update(row["user_id"] for row in many(conn, """
+            SELECT ur.user_id FROM access_userrole ur
+            JOIN access_role r ON r.id=ur.role_id AND r.is_active AND NOT r.is_system_admin
+            JOIN accounts_user u ON u.id=ur.user_id AND u.is_active AND u.email_verified_at IS NOT NULL
+            WHERE ur.role_id = ANY(%s)
+        """, (role_ids,)))
+    if group_ids:
+        selected.update(row["user_id"] for row in many(conn, """
+            SELECT gm.user_id FROM access_groupmember gm
+            JOIN access_group g ON g.id=gm.group_id AND g.is_active
+            JOIN accounts_user u ON u.id=gm.user_id AND u.is_active AND u.email_verified_at IS NOT NULL
+            WHERE gm.group_id = ANY(%s)
+        """, (group_ids,)))
+    if not selected:
+        return set()
+    return {row["id"] for row in many(conn, "SELECT id FROM accounts_user WHERE id = ANY(%s) AND is_active AND email_verified_at IS NOT NULL", (list(selected),))}
+
+
+def _system_snapshot(conn, selected_user_id=None):
+    users = many(conn, "SELECT id,full_name,email,is_active,email_verified_at,created_at FROM accounts_user ORDER BY full_name,email")
+    roles = many(conn, "SELECT id,key,name,is_active,is_system_admin,version FROM access_role ORDER BY is_system_admin DESC,name")
+    permissions = many(conn, "SELECT code,name,admin_only FROM access_permission ORDER BY admin_only DESC,name")
+    groups = many(conn, "SELECT id,name,is_active,version FROM access_group ORDER BY name")
+    for user in users:
+        user["id"] = str(user["id"])
+        user["role_ids"] = [str(row["role_id"]) for row in many(conn, "SELECT role_id FROM access_userrole WHERE user_id=%s", (user["id"],))]
+        user["roles"] = many(conn, """
+            SELECT r.id,r.name,r.is_system_admin FROM access_userrole ur JOIN access_role r ON r.id=ur.role_id
+            WHERE ur.user_id=%s ORDER BY r.name
+        """, (user["id"],))
+        user["groups"] = many(conn, """
+            SELECT g.id,g.name FROM access_groupmember gm JOIN access_group g ON g.id=gm.group_id
+            WHERE gm.user_id=%s ORDER BY g.name
+        """, (user["id"],))
+    for role in roles:
+        role["id"] = str(role["id"])
+        role["permission_codes"] = [row["permission_id"] for row in many(conn, "SELECT permission_id FROM access_rolepermission WHERE role_id=%s", (role["id"],))]
+        role["member_count"] = one(conn, "SELECT count(*) AS count FROM access_userrole WHERE role_id=%s", (role["id"],))["count"]
+    for group in groups:
+        group["id"] = str(group["id"])
+        group["members"] = many(conn, """
+            SELECT u.id,u.full_name,u.email FROM access_groupmember gm JOIN accounts_user u ON u.id=gm.user_id
+            WHERE gm.group_id=%s ORDER BY u.full_name,u.email
+        """, (group["id"],))
+        group["member_count"] = len(group["members"])
+    selected = next((user for user in users if user["id"] == str(selected_user_id)), None)
+    return users, roles, permissions, groups, selected
+
+
+def _delete_user_cascade(conn, user_id):
+    authored = [row["id"] for row in many(conn, "SELECT id FROM workitems_workitem WHERE author_id=%s FOR UPDATE", (user_id,))]
+    authored = list(authored)
+    message_ids = [row["id"] for row in many(conn, "SELECT id FROM discussions_eventmessage WHERE author_id=%s OR hidden_by_id=%s", (user_id, user_id))]
+    if authored:
+        conn.execute("DELETE FROM discussions_eventmessage WHERE work_item_id = ANY(%s)", (authored,))
+        conn.execute("DELETE FROM workitems_subtaskprogress WHERE work_item_id = ANY(%s)", (authored,))
+        conn.execute("DELETE FROM workitems_subtask WHERE work_item_id = ANY(%s)", (authored,))
+        conn.execute("DELETE FROM workitems_assignment WHERE work_item_id = ANY(%s)", (authored,))
+        conn.execute("DELETE FROM workitems_workitem WHERE id = ANY(%s)", (authored,))
+    if message_ids:
+        conn.execute("DELETE FROM discussions_eventmessage WHERE id = ANY(%s)", (message_ids,))
+    conn.execute("DELETE FROM workitems_assignment WHERE user_id=%s", (user_id,))
+    conn.execute("UPDATE workitems_assignment a SET assigned_by_id=w.author_id FROM workitems_workitem w WHERE a.work_item_id=w.id AND a.assigned_by_id=%s", (user_id,))
+    conn.execute("UPDATE workitems_assignment SET revoked_by_id=NULL WHERE revoked_by_id=%s", (user_id,))
+    conn.execute("UPDATE workitems_workitem SET archived_by_id=NULL,chat_closed_by_id=NULL WHERE archived_by_id=%s OR chat_closed_by_id=%s", (user_id, user_id))
+    conn.execute("UPDATE discussions_eventmessage SET hidden_by_id=NULL WHERE hidden_by_id=%s", (user_id,))
+    conn.execute("UPDATE accounts_invitation SET created_by_id=NULL WHERE created_by_id=%s", (user_id,))
+    conn.execute("UPDATE access_userrole SET created_by_id=NULL WHERE created_by_id=%s", (user_id,))
+    conn.execute("DELETE FROM audit_auditentry WHERE actor_id=%s OR object_id=%s OR object_id = ANY(%s)", (user_id, str(user_id), [str(item) for item in authored + message_ids]))
+    conn.execute("DELETE FROM access_userrole WHERE user_id=%s", (user_id,))
+    conn.execute("DELETE FROM access_groupmember WHERE user_id=%s", (user_id,))
+    conn.execute("DELETE FROM accounts_invitation WHERE user_id=%s", (user_id,))
+    conn.execute("DELETE FROM accounts_passwordresetgrant WHERE user_id=%s", (user_id,))
+    conn.execute("DELETE FROM app_sessions WHERE user_id=%s", (user_id,))
+    conn.execute("DELETE FROM accounts_user WHERE id=%s", (user_id,))
 
 
 def _assignments(user_id, completed=False, *, search="", kind="all", author="all", sort="asc"):
@@ -349,18 +474,292 @@ async def activation(request: Request):
     return _page("password.html", request, title="Доступ активирован", action="/accounts/activate/", finished=True, message="Доступ активирован. Теперь войдите с корпоративной почтой.")
 
 
+def _system_redirect(selected_user=None):
+    return RedirectResponse("/accounts/system/" + (f"?selected_user={selected_user}" if selected_user else ""), status_code=303)
+
+
+@app.get("/accounts/system/", response_class=HTMLResponse)
+async def system_page(request: Request):
+    actor = _require_system_admin(request)
+    if actor is None:
+        return _redirect_login(request)
+    if actor is False:
+        return PlainTextResponse("Forbidden\n", status_code=403)
+    selected_user = request.query_params.get("selected_user", "")
+    with connection() as conn:
+        users, roles, permissions, groups, selected = _system_snapshot(conn, selected_user)
+    return _page("system.html", request, active="system", users=users, roles=roles, all_permissions=permissions, groups=groups, selected_user=selected)
+
+
 @app.get("/accounts/administration/", response_class=HTMLResponse)
 async def administration(request: Request):
-    user = _require_user(request)
-    if not user:
+    """Compatibility URL retained for existing bookmarks and smoke checks."""
+    actor = _require_system_admin(request)
+    if actor is None:
         return _redirect_login(request)
+    if actor is False:
+        return PlainTextResponse("Forbidden\n", status_code=403)
     with connection() as conn:
-        try:
-            require_permission(conn, user["id"], "accounts.manage_users")
-        except PermissionError:
-            return PlainTextResponse("Forbidden\n", status_code=403)
-        users = many(conn, "SELECT id,full_name,email,is_active,email_verified_at,version FROM accounts_user ORDER BY full_name,email")
-    return _page("administration.html", request, active="administration", users=users)
+        users, roles, permissions, groups, selected = _system_snapshot(conn, request.query_params.get("selected_user", ""))
+    return _page("system.html", request, active="system", users=users, roles=roles, all_permissions=permissions, groups=groups, selected_user=selected)
+
+
+@app.post("/accounts/system/users/add/")
+async def system_user_add(request: Request):
+    actor = _require_system_admin(request)
+    if actor is None:
+        return _redirect_login(request)
+    if actor is False:
+        return PlainTextResponse("Forbidden\n", status_code=403)
+    form = await request.form()
+    if not csrf_valid(request.cookies.get(SESSION_COOKIE), str(form.get("csrf_token", ""))):
+        return PlainTextResponse("Forbidden\n", status_code=403)
+    try:
+        issue_invitation(actor["id"], str(form.get("email", "")), str(form.get("full_name", "")))
+    except ValueError as exc:
+        return PlainTextResponse(str(exc) + "\n", status_code=400)
+    return _system_redirect()
+
+
+@app.post("/accounts/system/users/{user_id}/delete/")
+async def system_user_delete(request: Request, user_id: UUID):
+    actor = _require_system_admin(request)
+    if actor is None:
+        return _redirect_login(request)
+    if actor is False:
+        return PlainTextResponse("Forbidden\n", status_code=403)
+    form = await request.form()
+    if not csrf_valid(request.cookies.get(SESSION_COOKIE), str(form.get("csrf_token", ""))):
+        return PlainTextResponse("Forbidden\n", status_code=403)
+    try:
+        with transaction() as conn:
+            if not _system_admin(conn, actor["id"]):
+                raise PermissionError
+            target = one(conn, "SELECT id FROM accounts_user WHERE id=%s FOR UPDATE", (user_id,))
+            if not target:
+                return PlainTextResponse("Not found\n", status_code=404)
+            if target["id"] == actor["id"] or _system_admin(conn, user_id):
+                return PlainTextResponse("Нельзя удалить учетную запись администратора\n", status_code=403)
+            _delete_user_cascade(conn, user_id)
+    except PermissionError:
+        return PlainTextResponse("Forbidden\n", status_code=403)
+    return _system_redirect()
+
+
+@app.post("/accounts/system/users/{user_id}/roles/")
+async def system_user_roles(request: Request, user_id: UUID):
+    actor = _require_system_admin(request)
+    if actor is None:
+        return _redirect_login(request)
+    if actor is False:
+        return PlainTextResponse("Forbidden\n", status_code=403)
+    form = await request.form()
+    if not csrf_valid(request.cookies.get(SESSION_COOKIE), str(form.get("csrf_token", ""))):
+        return PlainTextResponse("Forbidden\n", status_code=403)
+    try:
+        role_ids = list(dict.fromkeys(UUID(value) for value in form.getlist("role_ids")))
+    except ValueError:
+        return PlainTextResponse("Некорректная роль\n", status_code=400)
+    with transaction() as conn:
+        target = one(conn, "SELECT id FROM accounts_user WHERE id=%s FOR UPDATE", (user_id,))
+        if not target:
+            return PlainTextResponse("Not found\n", status_code=404)
+        if _system_admin(conn, user_id):
+            return PlainTextResponse("Нельзя изменять роли администратора\n", status_code=403)
+        valid = {row["id"] for row in many(conn, "SELECT id FROM access_role WHERE id=ANY(%s) AND is_active AND NOT is_system_admin", (role_ids,))}
+        conn.execute("DELETE FROM access_userrole WHERE user_id=%s", (user_id,))
+        for role_id in valid:
+            conn.execute("INSERT INTO access_userrole(user_id,role_id,created_at,created_by_id) VALUES (%s,%s,now(),%s)", (user_id, role_id, actor["id"]))
+    return _system_redirect(user_id)
+
+
+@app.post("/accounts/system/roles/create/")
+async def system_role_create(request: Request):
+    actor = _require_system_admin(request)
+    if actor is None:
+        return _redirect_login(request)
+    if actor is False:
+        return PlainTextResponse("Forbidden\n", status_code=403)
+    form = await request.form()
+    if not csrf_valid(request.cookies.get(SESSION_COOKIE), str(form.get("csrf_token", ""))):
+        return PlainTextResponse("Forbidden\n", status_code=403)
+    name = str(form.get("name", "")).strip()
+    if not name:
+        return PlainTextResponse("Название роли обязательно\n", status_code=400)
+    with transaction() as conn:
+        if one(conn, "SELECT 1 FROM access_role WHERE lower(name)=lower(%s)", (name,)):
+            return PlainTextResponse("Такая роль уже существует\n", status_code=409)
+        conn.execute("INSERT INTO access_role(id,key,name,is_active,is_system_admin,version) VALUES (%s,%s,%s,true,false,1)", (uuid4(), _role_key(conn, name), name))
+    return _system_redirect()
+
+
+@app.post("/accounts/system/roles/{role_id}/save/")
+async def system_role_save(request: Request, role_id: UUID):
+    actor = _require_system_admin(request)
+    if actor is None:
+        return _redirect_login(request)
+    if actor is False:
+        return PlainTextResponse("Forbidden\n", status_code=403)
+    form = await request.form()
+    if not csrf_valid(request.cookies.get(SESSION_COOKIE), str(form.get("csrf_token", ""))):
+        return PlainTextResponse("Forbidden\n", status_code=403)
+    name = str(form.get("name", "")).strip()
+    with transaction() as conn:
+        role = one(conn, "SELECT id,is_system_admin FROM access_role WHERE id=%s FOR UPDATE", (role_id,))
+        if not role:
+            return PlainTextResponse("Not found\n", status_code=404)
+        if role["is_system_admin"]:
+            return PlainTextResponse("Системную роль нельзя изменять\n", status_code=403)
+        if not name:
+            return PlainTextResponse("Название роли обязательно\n", status_code=400)
+        if one(conn, "SELECT 1 FROM access_role WHERE id<>%s AND lower(name)=lower(%s)", (role_id, name)):
+            return PlainTextResponse("Такая роль уже существует\n", status_code=409)
+        conn.execute("UPDATE access_role SET name=%s,version=version+1 WHERE id=%s", (name, role_id))
+    return _system_redirect()
+
+
+@app.post("/accounts/system/roles/{role_id}/permissions/")
+async def system_role_permissions(request: Request, role_id: UUID):
+    actor = _require_system_admin(request)
+    if actor is None:
+        return _redirect_login(request)
+    if actor is False:
+        return PlainTextResponse("Forbidden\n", status_code=403)
+    form = await request.form()
+    if not csrf_valid(request.cookies.get(SESSION_COOKIE), str(form.get("csrf_token", ""))):
+        return PlainTextResponse("Forbidden\n", status_code=403)
+    codes = set(form.getlist("permission_codes"))
+    with transaction() as conn:
+        role = one(conn, "SELECT id,is_system_admin FROM access_role WHERE id=%s FOR UPDATE", (role_id,))
+        if not role:
+            return PlainTextResponse("Not found\n", status_code=404)
+        if role["is_system_admin"]:
+            return PlainTextResponse("Права системной роли нельзя изменять\n", status_code=403)
+        allowed = {row["code"] for row in many(conn, "SELECT code FROM access_permission WHERE code=ANY(%s) AND NOT admin_only", (list(codes),))}
+        conn.execute("DELETE FROM access_rolepermission WHERE role_id=%s", (role_id,))
+        for code in allowed:
+            conn.execute("INSERT INTO access_rolepermission(permission_id,role_id) VALUES (%s,%s)", (code, role_id))
+    return _system_redirect()
+
+
+@app.post("/accounts/system/roles/{role_id}/delete/")
+async def system_role_delete(request: Request, role_id: UUID):
+    actor = _require_system_admin(request)
+    if actor is None:
+        return _redirect_login(request)
+    if actor is False:
+        return PlainTextResponse("Forbidden\n", status_code=403)
+    form = await request.form()
+    if not csrf_valid(request.cookies.get(SESSION_COOKIE), str(form.get("csrf_token", ""))):
+        return PlainTextResponse("Forbidden\n", status_code=403)
+    with transaction() as conn:
+        role = one(conn, "SELECT id,is_system_admin FROM access_role WHERE id=%s FOR UPDATE", (role_id,))
+        if not role:
+            return PlainTextResponse("Not found\n", status_code=404)
+        if role["is_system_admin"]:
+            return PlainTextResponse("Системную роль нельзя удалить\n", status_code=403)
+        if one(conn, "SELECT 1 FROM access_userrole WHERE role_id=%s", (role_id,)):
+            return PlainTextResponse("Сначала удалите пользователей из роли\n", status_code=409)
+        conn.execute("DELETE FROM access_rolepermission WHERE role_id=%s", (role_id,))
+        conn.execute("DELETE FROM access_role WHERE id=%s", (role_id,))
+    return _system_redirect()
+
+
+@app.post("/accounts/system/groups/create/")
+async def system_group_create(request: Request):
+    actor = _require_system_admin(request)
+    if actor is None:
+        return _redirect_login(request)
+    if actor is False:
+        return PlainTextResponse("Forbidden\n", status_code=403)
+    form = await request.form()
+    if not csrf_valid(request.cookies.get(SESSION_COOKIE), str(form.get("csrf_token", ""))):
+        return PlainTextResponse("Forbidden\n", status_code=403)
+    name = str(form.get("name", "")).strip()
+    if not name:
+        return PlainTextResponse("Название группы обязательно\n", status_code=400)
+    with transaction() as conn:
+        if one(conn, "SELECT 1 FROM access_group WHERE lower(name)=lower(%s)", (name,)):
+            return PlainTextResponse("Такая группа уже существует\n", status_code=409)
+        conn.execute("INSERT INTO access_group(id,name,is_active,version,created_at,updated_at) VALUES (%s,%s,true,1,now(),now())", (uuid4(), name))
+    return _system_redirect()
+
+
+@app.post("/accounts/system/groups/{group_id}/save/")
+async def system_group_save(request: Request, group_id: UUID):
+    actor = _require_system_admin(request)
+    if actor is None:
+        return _redirect_login(request)
+    if actor is False:
+        return PlainTextResponse("Forbidden\n", status_code=403)
+    form = await request.form()
+    if not csrf_valid(request.cookies.get(SESSION_COOKIE), str(form.get("csrf_token", ""))):
+        return PlainTextResponse("Forbidden\n", status_code=403)
+    name = str(form.get("name", "")).strip()
+    if not name:
+        return PlainTextResponse("Название группы обязательно\n", status_code=400)
+    with transaction() as conn:
+        if not one(conn, "SELECT 1 FROM access_group WHERE id=%s", (group_id,)):
+            return PlainTextResponse("Not found\n", status_code=404)
+        if one(conn, "SELECT 1 FROM access_group WHERE id<>%s AND lower(name)=lower(%s)", (group_id, name)):
+            return PlainTextResponse("Такая группа уже существует\n", status_code=409)
+        conn.execute("UPDATE access_group SET name=%s,version=version+1,updated_at=now() WHERE id=%s", (name, group_id))
+    return _system_redirect()
+
+
+@app.post("/accounts/system/groups/{group_id}/delete/")
+async def system_group_delete(request: Request, group_id: UUID):
+    actor = _require_system_admin(request)
+    if actor is None:
+        return _redirect_login(request)
+    if actor is False:
+        return PlainTextResponse("Forbidden\n", status_code=403)
+    form = await request.form()
+    if not csrf_valid(request.cookies.get(SESSION_COOKIE), str(form.get("csrf_token", ""))):
+        return PlainTextResponse("Forbidden\n", status_code=403)
+    with transaction() as conn:
+        if not one(conn, "SELECT 1 FROM access_group WHERE id=%s", (group_id,)):
+            return PlainTextResponse("Not found\n", status_code=404)
+        if one(conn, "SELECT 1 FROM access_groupmember WHERE group_id=%s", (group_id,)):
+            return PlainTextResponse("Сначала удалите участников группы\n", status_code=409)
+        conn.execute("DELETE FROM access_group WHERE id=%s", (group_id,))
+    return _system_redirect()
+
+
+@app.post("/accounts/system/groups/{group_id}/members/add/")
+async def system_group_member_add(request: Request, group_id: UUID):
+    actor = _require_system_admin(request)
+    if actor is None:
+        return _redirect_login(request)
+    if actor is False:
+        return PlainTextResponse("Forbidden\n", status_code=403)
+    form = await request.form()
+    if not csrf_valid(request.cookies.get(SESSION_COOKIE), str(form.get("csrf_token", ""))):
+        return PlainTextResponse("Forbidden\n", status_code=403)
+    try:
+        user_id = UUID(str(form.get("user_id", "")))
+    except ValueError:
+        return PlainTextResponse("Некорректный пользователь\n", status_code=400)
+    with transaction() as conn:
+        if not one(conn, "SELECT 1 FROM access_group WHERE id=%s", (group_id,)) or not one(conn, "SELECT 1 FROM accounts_user WHERE id=%s", (user_id,)):
+            return PlainTextResponse("Not found\n", status_code=404)
+        conn.execute("INSERT INTO access_groupmember(group_id,user_id,created_at) VALUES (%s,%s,now()) ON CONFLICT DO NOTHING", (group_id, user_id))
+    return _system_redirect()
+
+
+@app.post("/accounts/system/groups/{group_id}/members/{user_id}/delete/")
+async def system_group_member_delete(request: Request, group_id: UUID, user_id: UUID):
+    actor = _require_system_admin(request)
+    if actor is None:
+        return _redirect_login(request)
+    if actor is False:
+        return PlainTextResponse("Forbidden\n", status_code=403)
+    form = await request.form()
+    if not csrf_valid(request.cookies.get(SESSION_COOKIE), str(form.get("csrf_token", ""))):
+        return PlainTextResponse("Forbidden\n", status_code=403)
+    with transaction() as conn:
+        conn.execute("DELETE FROM access_groupmember WHERE group_id=%s AND user_id=%s", (group_id, user_id))
+    return _system_redirect()
 
 
 @app.get("/accounts/invite/", response_class=HTMLResponse)
@@ -426,6 +825,10 @@ async def employee_save(request: Request, user_id: UUID):
             employee = one(conn, "SELECT id,full_name,email,is_active,email_verified_at,version FROM accounts_user WHERE id=%s FOR UPDATE", (user_id,))
             if not employee:
                 return PlainTextResponse("Not found\n", status_code=404)
+            if _system_admin(conn, user_id) and user_id != actor["id"]:
+                return PlainTextResponse("Нельзя изменять учетную запись администратора\n", status_code=403)
+            if user_id == actor["id"] and str(form.get("is_active", "")) != "true":
+                return PlainTextResponse("Нельзя отключить собственную учетную запись администратора\n", status_code=403)
             active = str(form.get("is_active", "")) == "true"
             now = datetime.now(timezone.utc)
             if employee["is_active"] and not active:
@@ -644,9 +1047,9 @@ async def issue_page(request: Request):
     with connection() as conn:
         if not has_permission(conn, user["id"], "workitems.create"):
             return PlainTextResponse("Forbidden\n", status_code=403)
-        assignees = _employees(conn)
-    values = {"kind": "task", "assignee_ids": [str(user["id"])], "subtasks": []}
-    return _page("issue.html", request, values=values, assignees=assignees, current_user_id=str(user["id"]), edit_mode=False)
+        assignees, roles, groups = _audience_options(conn)
+    values = {"kind": "task", "assignee_ids": [str(user["id"])], "role_ids": [], "group_ids": [], "subtasks": []}
+    return _page("issue.html", request, values=values, assignees=assignees, roles=roles, groups=groups, current_user_id=str(user["id"]), edit_mode=False)
 
 
 @app.post("/workitems/new/")
@@ -661,8 +1064,8 @@ async def issue(request: Request):
         return PlainTextResponse("Forbidden\n", status_code=403)
     if not values["title"].strip() or values["kind"] not in {"task", "event"}:
         with connection() as conn:
-            assignees = _employees(conn)
-        return _page("issue.html", request, values=values, assignees=assignees, current_user_id=str(user["id"]), edit_mode=False, error="Заполните обязательные поля.")
+            assignees, roles, groups = _audience_options(conn)
+        return _page("issue.html", request, values=values, assignees=assignees, roles=roles, groups=groups, current_user_id=str(user["id"]), edit_mode=False, error="Заполните обязательные поля.")
     with connection() as conn:
         try:
             require_permission(conn, user["id"], "workitems.create")
@@ -675,35 +1078,42 @@ async def issue(request: Request):
             raise ValueError("Срок обязателен")
     except ValueError:
         with connection() as conn:
-            assignees = _employees(conn)
-        return _page("issue.html", request, values=values, assignees=assignees, current_user_id=str(user["id"]), edit_mode=False, error="Проверьте даты.")
+            assignees, roles, groups = _audience_options(conn)
+        return _page("issue.html", request, values=values, assignees=assignees, roles=roles, groups=groups, current_user_id=str(user["id"]), edit_mode=False, error="Проверьте даты.")
     if values["kind"] == "event" and event is None:
         with connection() as conn:
-            assignees = _employees(conn)
-        return _page("issue.html", request, values=values, assignees=assignees, current_user_id=str(user["id"]), edit_mode=False, error="Для события укажите дату.")
-    assignee_ids = []
+            assignees, roles, groups = _audience_options(conn)
+        return _page("issue.html", request, values=values, assignees=assignees, roles=roles, groups=groups, current_user_id=str(user["id"]), edit_mode=False, error="Для события укажите дату.")
     try:
         assignee_ids = list(dict.fromkeys(UUID(value) for value in values["assignee_ids"]))
+        role_ids = list(dict.fromkeys(UUID(value) for value in values["role_ids"]))
+        group_ids = list(dict.fromkeys(UUID(value) for value in values["group_ids"]))
     except ValueError:
-        assignee_ids = []
-    if not assignee_ids:
-        assignee_ids = [user["id"]]
+        with connection() as conn:
+            assignees, roles, groups = _audience_options(conn)
+        return _page("issue.html", request, values=values, assignees=assignees, roles=roles, groups=groups, current_user_id=str(user["id"]), edit_mode=False, error="Проверьте выбранных исполнителей.")
     import uuid
     item_id = uuid.uuid4()
-    with transaction() as conn:
-        conn.execute("INSERT INTO workitems_workitem(id,kind,title,description,author_id,created_at,due_at,event_at,version,progress_epoch) VALUES (%s,%s,%s,%s,%s,now(),%s,%s,1,1)", (item_id, values["kind"], values["title"].strip(), values["description"], user["id"], due, event))
-        valid_users = {row["id"] for row in many(conn, "SELECT id FROM accounts_user WHERE id = ANY(%s) AND is_active AND email_verified_at IS NOT NULL", (assignee_ids,))}
-        valid_users.add(user["id"]) if not valid_users else None
-        if valid_users - {user["id"]} and not has_permission(conn, user["id"], "workitems.manage_own_assignees") and not has_permission(conn, user["id"], "workitems.edit_all"):
-            return PlainTextResponse("Недостаточно прав для назначения других исполнителей\n", status_code=403)
-        for assignee_id in valid_users:
-            conn.execute("INSERT INTO workitems_assignment(id,work_item_id,user_id,state,first_assigned_at,assigned_at,revoked_reason,version,assigned_by_id) VALUES (%s,%s,%s,'active',now(),now(),'',1,%s)", (uuid.uuid4(), item_id, assignee_id, user["id"]))
-        position = 0
-        for text in values["subtasks"]:
-            if not text:
-                continue
-            position += 1
-            conn.execute("INSERT INTO workitems_subtask(id,text,position,content_revision,created_at,work_item_id) VALUES (%s,%s,%s,1,now(),%s)", (uuid.uuid4(), text[:1000], position, item_id))
+    try:
+        with transaction() as conn:
+            valid_roles = {row["id"] for row in many(conn, "SELECT id FROM access_role WHERE id=ANY(%s) AND is_active AND NOT is_system_admin", (role_ids,))}
+            valid_groups = {row["id"] for row in many(conn, "SELECT id FROM access_group WHERE id=ANY(%s) AND is_active", (group_ids,))}
+            valid_users = _resolve_audience(conn, assignee_ids, list(valid_roles), list(valid_groups))
+            if not valid_users:
+                valid_users = {user["id"]}
+            if valid_users - {user["id"]} and not has_permission(conn, user["id"], "workitems.manage_own_assignees") and not has_permission(conn, user["id"], "workitems.edit_all"):
+                raise PermissionError("Недостаточно прав для назначения других исполнителей")
+            conn.execute("INSERT INTO workitems_workitem(id,kind,title,description,author_id,created_at,due_at,event_at,version,progress_epoch) VALUES (%s,%s,%s,%s,%s,now(),%s,%s,1,1)", (item_id, values["kind"], values["title"].strip(), values["description"], user["id"], due, event))
+            for assignee_id in valid_users:
+                conn.execute("INSERT INTO workitems_assignment(id,work_item_id,user_id,state,first_assigned_at,assigned_at,revoked_reason,version,assigned_by_id) VALUES (%s,%s,%s,'active',now(),now(),'',1,%s)", (uuid.uuid4(), item_id, assignee_id, user["id"]))
+            position = 0
+            for text in values["subtasks"]:
+                if not text:
+                    continue
+                position += 1
+                conn.execute("INSERT INTO workitems_subtask(id,text,position,content_revision,created_at,work_item_id) VALUES (%s,%s,%s,1,now(),%s)", (uuid.uuid4(), text[:1000], position, item_id))
+    except PermissionError as exc:
+        return PlainTextResponse(str(exc) + "\n", status_code=403)
     return RedirectResponse(f"/workitems/{item_id}/", status_code=303)
 
 

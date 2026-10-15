@@ -15,6 +15,7 @@ docker compose exec web python scripts/bootstrap_admin.py --email egorovasv@kp11
 python3 scripts/smoke.py
 docker compose exec -T web python scripts/smoke_auth.py
 docker compose exec -T web python scripts/smoke_admin.py
+docker compose exec -T web python scripts/smoke_system.py
 ```
 
 Откройте http://127.0.0.1:8000/. Mailpit доступен на http://127.0.0.1:8025/.
@@ -27,6 +28,7 @@ docker compose exec -T web python scripts/smoke_admin.py
 docker compose run --rm tests
 docker compose exec -T web python -m pip check
 docker compose exec -T web python scripts/check_health.py
+docker compose exec -T web python scripts/smoke_system.py
 python3 -m compileall -q fastapi_app config scripts
 git diff --check
 ```

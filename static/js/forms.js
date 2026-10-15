@@ -1,4 +1,17 @@
 (() => {
+  document.querySelectorAll('[data-confirm-delete]').forEach(form => {
+    form.addEventListener('submit', event => {
+      if (!window.confirm(form.dataset.confirmDelete)) event.preventDefault();
+    });
+  });
+  const systemSearch = document.querySelector('[data-system-search]');
+  systemSearch?.addEventListener('input', () => {
+    const query = systemSearch.value.trim().toLocaleLowerCase();
+    document.querySelectorAll('[data-system-user]').forEach(row => {
+      row.hidden = query && !row.dataset.searchText.toLocaleLowerCase().includes(query);
+    });
+  });
+
   document.querySelectorAll('[data-password-toggle]').forEach(button => {
     const input = document.getElementById(button.dataset.passwordToggle);
     if (!input) return;
