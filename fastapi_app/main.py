@@ -474,8 +474,14 @@ async def activation(request: Request):
     return _page("password.html", request, title="Доступ активирован", action="/accounts/activate/", finished=True, message="Доступ активирован. Теперь войдите с корпоративной почтой.")
 
 
-def _system_redirect(selected_user=None):
-    return RedirectResponse("/accounts/system/" + (f"?selected_user={selected_user}" if selected_user else ""), status_code=303)
+def _system_redirect(selected_user=None, tab="users"):
+    query = []
+    if tab in {"users", "permissions"} and tab != "users":
+        query.append(f"tab={tab}")
+    if selected_user:
+        query.append(f"selected_user={selected_user}")
+    suffix = f"?{'&'.join(query)}" if query else ""
+    return RedirectResponse(f"/accounts/system/{suffix}", status_code=303)
 
 
 @app.get("/accounts/system/", response_class=HTMLResponse)
@@ -486,9 +492,12 @@ async def system_page(request: Request):
     if actor is False:
         return PlainTextResponse("Forbidden\n", status_code=403)
     selected_user = request.query_params.get("selected_user", "")
+    system_tab = request.query_params.get("tab", "users")
+    if system_tab not in {"users", "permissions"}:
+        system_tab = "users"
     with connection() as conn:
         users, roles, permissions, groups, selected = _system_snapshot(conn, selected_user)
-    return _page("system.html", request, active="system", users=users, roles=roles, all_permissions=permissions, groups=groups, selected_user=selected)
+    return _page("system.html", request, active="system", users=users, roles=roles, all_permissions=permissions, groups=groups, selected_user=selected, system_tab=system_tab)
 
 
 @app.get("/accounts/administration/", response_class=HTMLResponse)
@@ -499,9 +508,13 @@ async def administration(request: Request):
         return _redirect_login(request)
     if actor is False:
         return PlainTextResponse("Forbidden\n", status_code=403)
+    selected_user = request.query_params.get("selected_user", "")
+    system_tab = request.query_params.get("tab", "users")
+    if system_tab not in {"users", "permissions"}:
+        system_tab = "users"
     with connection() as conn:
-        users, roles, permissions, groups, selected = _system_snapshot(conn, request.query_params.get("selected_user", ""))
-    return _page("system.html", request, active="system", users=users, roles=roles, all_permissions=permissions, groups=groups, selected_user=selected)
+        users, roles, permissions, groups, selected = _system_snapshot(conn, selected_user)
+    return _page("system.html", request, active="system", users=users, roles=roles, all_permissions=permissions, groups=groups, selected_user=selected, system_tab=system_tab)
 
 
 @app.post("/accounts/system/users/add/")
@@ -590,7 +603,7 @@ async def system_role_create(request: Request):
         if one(conn, "SELECT 1 FROM access_role WHERE lower(name)=lower(%s)", (name,)):
             return PlainTextResponse("Такая роль уже существует\n", status_code=409)
         conn.execute("INSERT INTO access_role(id,key,name,is_active,is_system_admin,version) VALUES (%s,%s,%s,true,false,1)", (uuid4(), _role_key(conn, name), name))
-    return _system_redirect()
+    return _system_redirect(tab="permissions")
 
 
 @app.post("/accounts/system/roles/{role_id}/save/")
@@ -615,7 +628,7 @@ async def system_role_save(request: Request, role_id: UUID):
         if one(conn, "SELECT 1 FROM access_role WHERE id<>%s AND lower(name)=lower(%s)", (role_id, name)):
             return PlainTextResponse("Такая роль уже существует\n", status_code=409)
         conn.execute("UPDATE access_role SET name=%s,version=version+1 WHERE id=%s", (name, role_id))
-    return _system_redirect()
+    return _system_redirect(tab="permissions")
 
 
 @app.post("/accounts/system/roles/{role_id}/permissions/")
@@ -639,7 +652,7 @@ async def system_role_permissions(request: Request, role_id: UUID):
         conn.execute("DELETE FROM access_rolepermission WHERE role_id=%s", (role_id,))
         for code in allowed:
             conn.execute("INSERT INTO access_rolepermission(permission_id,role_id) VALUES (%s,%s)", (code, role_id))
-    return _system_redirect()
+    return _system_redirect(tab="permissions")
 
 
 @app.post("/accounts/system/roles/{role_id}/delete/")
@@ -662,7 +675,7 @@ async def system_role_delete(request: Request, role_id: UUID):
             return PlainTextResponse("Сначала удалите пользователей из роли\n", status_code=409)
         conn.execute("DELETE FROM access_rolepermission WHERE role_id=%s", (role_id,))
         conn.execute("DELETE FROM access_role WHERE id=%s", (role_id,))
-    return _system_redirect()
+    return _system_redirect(tab="permissions")
 
 
 @app.post("/accounts/system/groups/create/")

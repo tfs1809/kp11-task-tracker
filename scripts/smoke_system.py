@@ -104,8 +104,11 @@ try:
     expect_get_status(regular_opener, "/accounts/system/", 403)
     with get(opener, "/accounts/system/") as response:
         body = response.read().decode()
-        assert all(marker in body for marker in ("СИСТЕМА", "ПОЛЬЗОВАТЕЛИ", "РОЛИ И ПРАВА", "СОЗДАТЬ ГРУППУ"))
+        assert all(marker in body for marker in ("СИСТЕМА", "ПОЛЬЗОВАТЕЛИ", "СОЗДАТЬ ГРУППУ", "ПРАВА"))
         token = csrf(body)
+    with get(opener, "/accounts/system/?tab=permissions") as response:
+        body = response.read().decode()
+        assert all(marker in body for marker in ("РОЛИ И ПРАВА", "ПРАВА РОЛЕЙ", "ПОЛЬЗОВАТЕЛИ"))
     with post(opener, "/accounts/system/roles/create/", {"csrf_token": token, "name": role_name}):
         pass
     with db() as conn:

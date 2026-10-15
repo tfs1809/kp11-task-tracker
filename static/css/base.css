@@ -229,6 +229,9 @@ main > .card:not(.interface-card) input:not([type=checkbox]):not([type=hidden]),
 .system-heading h1 { margin: 0 0 .35rem; color: var(--kp11-purple); font-family: 'Comfortaa', Arial, sans-serif; font-size: 1.45rem; font-weight: 500; }
 .system-heading p { margin: 0; color: #756f83; }
 .system-badge { padding: .55rem 1rem; border-radius: 12px; background: var(--kp11-lavender); color: var(--kp11-purple); }
+.system-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; margin-bottom: 1.25rem; }
+.system-tabs a { min-height: 48px; padding: .6rem 1rem; border: 2px solid var(--kp11-purple); border-radius: 12px 12px 0 0; color: var(--kp11-purple); background: #fff; text-align: center; text-decoration: none; font-family: 'Comfortaa', Arial, sans-serif; font-size: 1.15rem; }
+.system-tabs a[aria-current="page"] { color: #fff; background: var(--kp11-purple); }
 .system-grid { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(25rem, .95fr); gap: 1.25rem; align-items: start; }
 .system-column { display: grid; gap: 1.25rem; min-width: 0; }
 .system-panel { padding: .75rem; border-radius: 14px; background: var(--kp11-lavender); }
