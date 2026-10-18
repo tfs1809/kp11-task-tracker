@@ -108,11 +108,16 @@ try:
         token = csrf(body)
     with get(opener, "/accounts/system/?tab=permissions") as response:
         body = response.read().decode()
-        assert all(marker in body for marker in ("РОЛИ И ПРАВА", "ПРАВА РОЛЕЙ", "ПОЛЬЗОВАТЕЛИ"))
+        assert all(marker in body for marker in ("РОЛИ И ПРАВА", "ПРАВА РОЛЕЙ", "ПОЛЬЗОВАТЕЛИ", "role-permission-form", "role-delete-button"))
     with post(opener, "/accounts/system/roles/create/", {"csrf_token": token, "name": role_name}):
         pass
     with db() as conn:
         ids["role"] = conn.execute("SELECT id FROM access_role WHERE name=%s", (role_name,)).fetchone()["id"]
+    with get(opener, "/accounts/system/?tab=permissions") as response:
+        body = response.read().decode()
+        role_card = re.search(r'<section class="system-panel permission-role-card[^>]*>.*?value="' + re.escape(role_name) + r'".*?</section>', body, re.S).group()
+        delete_button = re.search(r'<button[^>]*class="button role-delete-button"[^>]*>', role_card).group()
+        assert "disabled" not in delete_button
     with get(opener, "/accounts/system/") as response:
         token = csrf(response.read().decode())
     expect_status(opener, "/accounts/system/roles/create/", {"csrf_token": token, "name": role_name.lower()}, 409)
@@ -125,10 +130,11 @@ try:
     renamed_role = f"{role_name} renamed"
     with get(opener, "/accounts/system/") as response:
         token = csrf(response.read().decode())
-    with post(opener, f"/accounts/system/roles/{ids['role']}/save/", {"csrf_token": token, "name": renamed_role}):
+    with post(opener, f"/accounts/system/roles/{ids['role']}/save/", {"csrf_token": token, "name": renamed_role, "save_permissions": "1", "permission_codes": "workitems.create"}):
         pass
     with db() as conn:
         assert conn.execute("SELECT 1 FROM access_role WHERE id=%s AND name=%s", (ids["role"], renamed_role)).fetchone()
+        assert conn.execute("SELECT 1 FROM access_rolepermission WHERE role_id=%s AND permission_id='workitems.create'", (ids["role"],)).fetchone()
     with get(opener, "/accounts/system/") as response:
         token = csrf(response.read().decode())
     with post(opener, f"/accounts/system/roles/{ids['role']}/permissions/", {"csrf_token": token, "permission_codes": ["workitems.create", "accounts.manage_users"]}):
@@ -160,6 +166,11 @@ try:
         token = csrf(response.read().decode())
     with post(opener, f"/accounts/system/users/{ids['first']}/roles/", {"csrf_token": token, "role_ids": str(ids["role"])}):
         pass
+    with get(opener, "/accounts/system/?tab=permissions") as response:
+        body = response.read().decode()
+        role_card = re.search(r'<section class="system-panel permission-role-card[^>]*>.*?value="' + re.escape(renamed_role) + r'".*?</section>', body, re.S).group()
+        delete_button = re.search(r'<button[^>]*class="button role-delete-button"[^>]*>', role_card).group()
+        assert "disabled" in delete_button
     with get(opener, "/accounts/system/") as response:
         token = csrf(response.read().decode())
     expect_status(opener, f"/accounts/system/roles/{ids['role']}/delete/", {"csrf_token": token}, 409)

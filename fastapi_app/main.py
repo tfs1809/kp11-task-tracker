@@ -656,6 +656,8 @@ async def system_role_save(request: Request, role_id: UUID):
     if not csrf_valid(request.cookies.get(SESSION_COOKIE), str(form.get("csrf_token", ""))):
         return PlainTextResponse("Forbidden\n", status_code=403)
     name = str(form.get("name", "")).strip()
+    save_permissions = str(form.get("save_permissions", "")) == "1"
+    permission_codes = set(form.getlist("permission_codes")) if save_permissions else set()
     with transaction() as conn:
         role = one(conn, "SELECT id,is_system_admin FROM access_role WHERE id=%s FOR UPDATE", (role_id,))
         if not role:
@@ -667,6 +669,11 @@ async def system_role_save(request: Request, role_id: UUID):
         if one(conn, "SELECT 1 FROM access_role WHERE id<>%s AND lower(name)=lower(%s)", (role_id, name)):
             return PlainTextResponse("Такая роль уже существует\n", status_code=409)
         conn.execute("UPDATE access_role SET name=%s,version=version+1 WHERE id=%s", (name, role_id))
+        if save_permissions:
+            allowed = {row["code"] for row in many(conn, "SELECT code FROM access_permission WHERE code=ANY(%s) AND NOT admin_only", (list(permission_codes),))}
+            conn.execute("DELETE FROM access_rolepermission WHERE role_id=%s", (role_id,))
+            for code in allowed:
+                conn.execute("INSERT INTO access_rolepermission(permission_id,role_id) VALUES (%s,%s)", (code, role_id))
     return _system_redirect(tab="permissions")
 
 

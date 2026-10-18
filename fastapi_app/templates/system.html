@@ -63,24 +63,59 @@
     </div>
   </div>
   {% else %}
-  <div class="system-grid">
-    <div class="system-column">
-      <section class="system-panel">
+  <section class="permissions-page" id="permissions">
+    <section class="system-panel permissions-intro">
+      <div class="system-panel-inner">
+        <div class="system-panel-title"><h2>РОЛИ И ПРАВА<span class="system-accessibility-label">ПРАВА РОЛЕЙ</span></h2><span>Всего: {{ roles|length }}</span></div>
+        <form method="post" action="/accounts/system/roles/create/" class="role-create-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf }}">
+          <label>Новая роль<input name="name" required placeholder="Введите название роли"></label>
+          <button type="submit">СОЗДАТЬ</button>
+        </form>
+      </div>
+    </section>
+
+    <div class="permissions-role-list">
+      {% set permission_order = ['workitems.edit_all', 'workitems.edit_own', 'discussions.moderate', 'discussions.send_accessible', 'workitems.view_all', 'workitems.view_own', 'workitems.create', 'workitems.manage_own_assignees'] %}
+      {% for role in roles %}
+      <section class="system-panel permission-role-card {% if role.is_system_admin %}is-protected{% endif %}">
         <div class="system-panel-inner">
-          <div class="system-panel-title"><h2>РОЛИ И ПРАВА</h2><span>Всего: {{ roles|length }}</span></div>
-          <form method="post" action="/accounts/system/roles/create/" class="system-inline-form compact-form"><input type="hidden" name="csrf_token" value="{{ csrf }}"><label>Новая роль<input name="name" required></label><button type="submit">СОЗДАТЬ</button></form>
-          <div class="role-list">{% for role in roles %}<article class="role-item"><form method="post" action="/accounts/system/roles/{{ role.id }}/save/"><input type="hidden" name="csrf_token" value="{{ csrf }}"><input name="name" value="{{ role.name }}" {% if role.is_system_admin %}disabled{% endif %}><span>{{ role.member_count }} пользователей</span>{% if not role.is_system_admin %}<button type="submit" class="button secondary">СОХРАНИТЬ</button></form><form method="post" action="/accounts/system/roles/{{ role.id }}/delete/" data-confirm-delete="Удалить роль {{ role.name }}? Роль должна быть пустой."><input type="hidden" name="csrf_token" value="{{ csrf }}"><button type="submit" class="link-danger">Удалить</button></form>{% else %}<small>Защищённая роль администратора</small></form>{% endif %}</article>{% endfor %}</div>
+          <div class="role-card-layout">
+            <form method="post" action="/accounts/system/roles/{{ role.id }}/save/" class="role-permission-form">
+              <input type="hidden" name="csrf_token" value="{{ csrf }}">
+              {% if not role.is_system_admin %}<input type="hidden" name="save_permissions" value="1">{% endif %}
+              <div class="role-card-header">
+                <label>Роль<input name="name" value="{{ role.name }}" {% if role.is_system_admin %}disabled{% endif %}></label>
+                <span class="role-member-count">{{ role.member_count }} пользователей</span>
+                {% if not role.is_system_admin %}<button type="submit">СОХРАНИТЬ</button>{% endif %}
+              </div>
+              <div class="system-divider"></div>
+              {% if role.is_system_admin %}
+              <p class="muted role-protected-note">Защищённая роль администратора. Права назначены системой.</p>
+              {% else %}
+              <div class="role-permissions-grid">
+                {% for code in permission_order %}
+                  {% for permission in all_permissions if permission.code == code %}
+                  <label><input type="checkbox" name="permission_codes" value="{{ permission.code }}" {% if permission.code in role.permission_codes %}checked{% endif %}> <span>{{ permission.name }}</span></label>
+                  {% endfor %}
+                {% endfor %}
+              </div>
+              {% endif %}
+            </form>
+            {% if not role.is_system_admin %}
+            <form method="post" action="/accounts/system/roles/{{ role.id }}/delete/" class="role-delete-form" data-confirm-delete="Удалить роль {{ role.name }}? Роль должна быть пустой.">
+              <input type="hidden" name="csrf_token" value="{{ csrf }}">
+              <button type="submit" class="button role-delete-button" {% if role.member_count %}disabled title="Сначала удалите пользователей из роли"{% endif %}>УДАЛИТЬ</button>
+            </form>
+            {% else %}<span class="role-protected-badge">Защищённая роль</span>{% endif %}
+          </div>
         </div>
       </section>
+      {% else %}
+      <section class="system-panel"><div class="system-panel-inner"><p class="muted">Пользовательских ролей пока нет.</p></div></section>
+      {% endfor %}
     </div>
-    <div class="system-column">
-      <section class="system-panel" id="permissions">
-        <div class="system-panel-inner"><h2>ПРАВА РОЛЕЙ</h2><p class="muted">Системная роль администратора защищена.</p>
-          {% for role in roles if not role.is_system_admin %}<form method="post" action="/accounts/system/roles/{{ role.id }}/permissions/" class="permissions-form"><input type="hidden" name="csrf_token" value="{{ csrf }}"><h3>{{ role.name }}</h3><div>{% for permission in all_permissions if not permission.admin_only %}<label><input type="checkbox" name="permission_codes" value="{{ permission.code }}" {% if permission.code in role.permission_codes %}checked{% endif %}> {{ permission.name }}</label>{% endfor %}</div><button type="submit">СОХРАНИТЬ ПРАВА</button></form>{% else %}<p class="muted">Пользовательских ролей пока нет.</p>{% endfor %}
-        </div>
-      </section>
-    </div>
-  </div>
+  </section>
   {% endif %}
 </div>
 {% endblock %}
