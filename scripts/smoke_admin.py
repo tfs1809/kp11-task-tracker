@@ -113,6 +113,7 @@ try:
     with opener.open(urllib.request.Request(BASE + f"/workitems/{delete_task_id}/edit/", headers={"User-Agent": "fastapi-admin-smoke"}), timeout=5) as response:
         edit_body = response.read().decode()
         assert "УДАЛИТЬ" in edit_body and "delete-workitem-dialog" in edit_body and "Удалить только у себя" in edit_body
+        assert edit_body.index("</form>") < edit_body.index("<dialog id=\"delete-workitem-dialog\"")
         csrf = token(edit_body)
     with opener.open(urllib.request.Request(BASE + f"/workitems/{delete_task_id}/delete/", data=urllib.parse.urlencode({"csrf_token": csrf, "delete_scope": "self"}).encode(), headers={"User-Agent": "fastapi-admin-smoke"}), timeout=5) as response:
         assert response.geturl().endswith("/")
