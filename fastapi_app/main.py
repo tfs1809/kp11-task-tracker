@@ -289,6 +289,12 @@ def _delete_user_cascade(conn, user_id):
         conn.execute("DELETE FROM workitems_workitem WHERE id = ANY(%s)", (authored,))
     if message_ids:
         conn.execute("DELETE FROM discussions_eventmessage WHERE id = ANY(%s)", (message_ids,))
+    # Assignment progress has no ON DELETE CASCADE. Remove it before deleting
+    # assignments belonging to the user, including completed subtasks.
+    conn.execute(
+        "DELETE FROM workitems_subtaskprogress WHERE assignment_id IN (SELECT id FROM workitems_assignment WHERE user_id=%s)",
+        (user_id,),
+    )
     conn.execute("DELETE FROM workitems_assignment WHERE user_id=%s", (user_id,))
     conn.execute("UPDATE workitems_assignment a SET assigned_by_id=w.author_id FROM workitems_workitem w WHERE a.work_item_id=w.id AND a.assigned_by_id=%s", (user_id,))
     conn.execute("UPDATE workitems_assignment SET revoked_by_id=NULL WHERE revoked_by_id=%s", (user_id,))

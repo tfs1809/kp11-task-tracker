@@ -197,6 +197,10 @@ try:
     items.append(item_id)
     with db() as conn:
         assert [row["user_id"] for row in conn.execute("SELECT user_id FROM workitems_assignment WHERE work_item_id=%s", (item_id,))] == [ids["first"]]
+        assignment_id = conn.execute("SELECT id FROM workitems_assignment WHERE work_item_id=%s AND user_id=%s", (item_id, ids["first"])).fetchone()["id"]
+        subtask_id = uuid4()
+        conn.execute("INSERT INTO workitems_subtask(id,text,position,content_revision,created_at,work_item_id) VALUES (%s,'Completed before deletion',0,1,now(),%s)", (subtask_id, item_id))
+        conn.execute("INSERT INTO workitems_subtaskprogress(checked_at,checked_revision,version,assignment_id,subtask_id,work_item_id) VALUES (now(),1,1,%s,%s,%s)", (assignment_id, subtask_id, item_id))
 
     with get(opener, "/accounts/system/") as response:
         token = csrf(response.read().decode())
@@ -232,6 +236,7 @@ try:
         assert conn.execute("SELECT 1 FROM workitems_workitem WHERE id=%s", (authored,)).fetchone() is None
         assert conn.execute("SELECT 1 FROM workitems_workitem WHERE id=%s", (item_id,)).fetchone() is not None
         assert conn.execute("SELECT 1 FROM workitems_assignment WHERE work_item_id=%s", (item_id,)).fetchone() is None
+        assert conn.execute("SELECT 1 FROM workitems_subtaskprogress WHERE work_item_id=%s", (item_id,)).fetchone() is None
     with get(opener, "/accounts/system/") as response:
         token = csrf(response.read().decode())
     with post(opener, f"/accounts/system/groups/{ids['group']}/members/{ids['second']}/delete/", {"csrf_token": token}):
