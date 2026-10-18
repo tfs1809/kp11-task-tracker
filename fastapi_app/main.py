@@ -513,14 +513,24 @@ async def activation(request: Request):
     return _page("password.html", request, title="Доступ активирован", action="/accounts/activate/", finished=True, message="Доступ активирован. Теперь войдите с корпоративной почтой.")
 
 
-def _system_redirect(selected_user=None, tab="users"):
+def _system_redirect(selected_user=None, tab="users", selected_group=None):
     query = []
     if tab in {"users", "permissions"} and tab != "users":
         query.append(f"tab={tab}")
     if selected_user:
         query.append(f"selected_user={selected_user}")
+    if selected_group:
+        query.append(f"selected_group={selected_group}")
     suffix = f"?{'&'.join(query)}" if query else ""
     return RedirectResponse(f"/accounts/system/{suffix}", status_code=303)
+
+
+def _selected_group_id(groups, requested):
+    available = {str(group["id"]) for group in groups}
+    requested = str(requested or "")
+    if requested in available:
+        return requested
+    return str(groups[0]["id"]) if groups else ""
 
 
 @app.get("/accounts/system/", response_class=HTMLResponse)
@@ -531,12 +541,14 @@ async def system_page(request: Request):
     if actor is False:
         return PlainTextResponse("Forbidden\n", status_code=403)
     selected_user = request.query_params.get("selected_user", "")
+    requested_group = request.query_params.get("selected_group", "")
     system_tab = request.query_params.get("tab", "users")
     if system_tab not in {"users", "permissions"}:
         system_tab = "users"
     with connection() as conn:
         users, roles, permissions, groups, selected = _system_snapshot(conn, selected_user)
-    return _page("system.html", request, active="system", users=users, roles=roles, all_permissions=permissions, groups=groups, selected_user=selected, system_tab=system_tab)
+    selected_group = _selected_group_id(groups, requested_group)
+    return _page("system.html", request, active="system", users=users, roles=roles, all_permissions=permissions, groups=groups, selected_user=selected, selected_group=selected_group, system_tab=system_tab)
 
 
 @app.get("/accounts/administration/", response_class=HTMLResponse)
@@ -548,12 +560,14 @@ async def administration(request: Request):
     if actor is False:
         return PlainTextResponse("Forbidden\n", status_code=403)
     selected_user = request.query_params.get("selected_user", "")
+    requested_group = request.query_params.get("selected_group", "")
     system_tab = request.query_params.get("tab", "users")
     if system_tab not in {"users", "permissions"}:
         system_tab = "users"
     with connection() as conn:
         users, roles, permissions, groups, selected = _system_snapshot(conn, selected_user)
-    return _page("system.html", request, active="system", users=users, roles=roles, all_permissions=permissions, groups=groups, selected_user=selected, system_tab=system_tab)
+    selected_group = _selected_group_id(groups, requested_group)
+    return _page("system.html", request, active="system", users=users, roles=roles, all_permissions=permissions, groups=groups, selected_user=selected, selected_group=selected_group, system_tab=system_tab)
 
 
 @app.post("/accounts/system/users/add/")
@@ -566,11 +580,12 @@ async def system_user_add(request: Request):
     form = await request.form()
     if not csrf_valid(request.cookies.get(SESSION_COOKIE), str(form.get("csrf_token", ""))):
         return PlainTextResponse("Forbidden\n", status_code=403)
+    selected_group = str(form.get("selected_group", "")).strip() or None
     try:
         issue_invitation(actor["id"], str(form.get("email", "")), str(form.get("full_name", "")))
     except ValueError as exc:
         return PlainTextResponse(str(exc) + "\n", status_code=400)
-    return _system_redirect()
+    return _system_redirect(selected_group=selected_group)
 
 
 @app.post("/accounts/system/users/{user_id}/delete/")
@@ -583,6 +598,7 @@ async def system_user_delete(request: Request, user_id: UUID):
     form = await request.form()
     if not csrf_valid(request.cookies.get(SESSION_COOKIE), str(form.get("csrf_token", ""))):
         return PlainTextResponse("Forbidden\n", status_code=403)
+    selected_group = str(form.get("selected_group", "")).strip() or None
     try:
         with transaction() as conn:
             if not _system_admin(conn, actor["id"]):
@@ -595,7 +611,7 @@ async def system_user_delete(request: Request, user_id: UUID):
             _delete_user_cascade(conn, user_id)
     except PermissionError:
         return PlainTextResponse("Forbidden\n", status_code=403)
-    return _system_redirect()
+    return _system_redirect(selected_group=selected_group)
 
 
 @app.post("/accounts/system/users/{user_id}/roles/")
@@ -608,6 +624,7 @@ async def system_user_roles(request: Request, user_id: UUID):
     form = await request.form()
     if not csrf_valid(request.cookies.get(SESSION_COOKIE), str(form.get("csrf_token", ""))):
         return PlainTextResponse("Forbidden\n", status_code=403)
+    selected_group = str(form.get("selected_group", "")).strip() or None
     try:
         role_ids = list(dict.fromkeys(UUID(value) for value in form.getlist("role_ids")))
     except ValueError:
@@ -622,7 +639,7 @@ async def system_user_roles(request: Request, user_id: UUID):
         conn.execute("DELETE FROM access_userrole WHERE user_id=%s", (user_id,))
         for role_id in valid:
             conn.execute("INSERT INTO access_userrole(user_id,role_id,created_at,created_by_id) VALUES (%s,%s,now(),%s)", (user_id, role_id, actor["id"]))
-    return _system_redirect(user_id)
+    return _system_redirect(user_id, selected_group=selected_group)
 
 
 @app.post("/accounts/system/roles/create/")
@@ -737,11 +754,12 @@ async def system_group_create(request: Request):
     name = str(form.get("name", "")).strip()
     if not name:
         return PlainTextResponse("Название группы обязательно\n", status_code=400)
+    group_id = uuid4()
     with transaction() as conn:
         if one(conn, "SELECT 1 FROM access_group WHERE lower(name)=lower(%s)", (name,)):
             return PlainTextResponse("Такая группа уже существует\n", status_code=409)
-        conn.execute("INSERT INTO access_group(id,name,is_active,version,created_at,updated_at) VALUES (%s,%s,true,1,now(),now())", (uuid4(), name))
-    return _system_redirect()
+        conn.execute("INSERT INTO access_group(id,name,is_active,version,created_at,updated_at) VALUES (%s,%s,true,1,now(),now())", (group_id, name))
+    return _system_redirect(selected_group=group_id)
 
 
 @app.post("/accounts/system/groups/{group_id}/save/")
@@ -754,6 +772,7 @@ async def system_group_save(request: Request, group_id: UUID):
     form = await request.form()
     if not csrf_valid(request.cookies.get(SESSION_COOKIE), str(form.get("csrf_token", ""))):
         return PlainTextResponse("Forbidden\n", status_code=403)
+    selected_group = str(form.get("selected_group", "")).strip() or str(group_id)
     name = str(form.get("name", "")).strip()
     if not name:
         return PlainTextResponse("Название группы обязательно\n", status_code=400)
@@ -763,7 +782,7 @@ async def system_group_save(request: Request, group_id: UUID):
         if one(conn, "SELECT 1 FROM access_group WHERE id<>%s AND lower(name)=lower(%s)", (group_id, name)):
             return PlainTextResponse("Такая группа уже существует\n", status_code=409)
         conn.execute("UPDATE access_group SET name=%s,version=version+1,updated_at=now() WHERE id=%s", (name, group_id))
-    return _system_redirect()
+    return _system_redirect(selected_group=selected_group)
 
 
 @app.post("/accounts/system/groups/{group_id}/delete/")
@@ -776,13 +795,14 @@ async def system_group_delete(request: Request, group_id: UUID):
     form = await request.form()
     if not csrf_valid(request.cookies.get(SESSION_COOKIE), str(form.get("csrf_token", ""))):
         return PlainTextResponse("Forbidden\n", status_code=403)
+    selected_group = str(form.get("selected_group", "")).strip() or None
     with transaction() as conn:
         if not one(conn, "SELECT 1 FROM access_group WHERE id=%s", (group_id,)):
             return PlainTextResponse("Not found\n", status_code=404)
         if one(conn, "SELECT 1 FROM access_groupmember WHERE group_id=%s", (group_id,)):
             return PlainTextResponse("Сначала удалите участников группы\n", status_code=409)
         conn.execute("DELETE FROM access_group WHERE id=%s", (group_id,))
-    return _system_redirect()
+    return _system_redirect(selected_group=selected_group)
 
 
 @app.post("/accounts/system/groups/{group_id}/members/add/")
@@ -795,6 +815,7 @@ async def system_group_member_add(request: Request, group_id: UUID):
     form = await request.form()
     if not csrf_valid(request.cookies.get(SESSION_COOKIE), str(form.get("csrf_token", ""))):
         return PlainTextResponse("Forbidden\n", status_code=403)
+    selected_group = str(form.get("selected_group", "")).strip() or str(group_id)
     try:
         user_id = UUID(str(form.get("user_id", "")))
     except ValueError:
@@ -803,7 +824,7 @@ async def system_group_member_add(request: Request, group_id: UUID):
         if not one(conn, "SELECT 1 FROM access_group WHERE id=%s", (group_id,)) or not one(conn, "SELECT 1 FROM accounts_user WHERE id=%s", (user_id,)):
             return PlainTextResponse("Not found\n", status_code=404)
         conn.execute("INSERT INTO access_groupmember(group_id,user_id,created_at) VALUES (%s,%s,now()) ON CONFLICT DO NOTHING", (group_id, user_id))
-    return _system_redirect()
+    return _system_redirect(selected_group=selected_group)
 
 
 @app.post("/accounts/system/groups/{group_id}/members/{user_id}/delete/")
@@ -816,9 +837,10 @@ async def system_group_member_delete(request: Request, group_id: UUID, user_id: 
     form = await request.form()
     if not csrf_valid(request.cookies.get(SESSION_COOKIE), str(form.get("csrf_token", ""))):
         return PlainTextResponse("Forbidden\n", status_code=403)
+    selected_group = str(form.get("selected_group", "")).strip() or str(group_id)
     with transaction() as conn:
         conn.execute("DELETE FROM access_groupmember WHERE group_id=%s AND user_id=%s", (group_id, user_id))
-    return _system_redirect()
+    return _system_redirect(selected_group=selected_group)
 
 
 @app.get("/accounts/invite/", response_class=HTMLResponse)

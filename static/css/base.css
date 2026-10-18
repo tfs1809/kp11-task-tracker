@@ -338,7 +338,7 @@ main > .card:not(.interface-card) input:not([type=checkbox]):not([type=hidden]),
 .role-protected-badge { align-self: start; padding: .55rem .75rem; color: #756f83; font-size: .85rem; }
 .system-group-list { display: grid; gap: .55rem; max-height: 190px; overflow-y: auto; scrollbar-color: var(--kp11-purple) var(--kp11-lavender); }
 .system-group-list a { min-height: 0; display: flex; justify-content: space-between; gap: .75rem; padding: .75rem; border: 2px solid var(--kp11-lavender); border-radius: 12px; color: var(--kp11-purple); text-decoration: none; }
-.system-group-list a:first-child { background: var(--kp11-lavender); border-color: var(--kp11-lavender); }
+.system-group-list a.is-selected { background: var(--kp11-lavender); border-color: var(--kp11-lavender); }
 .system-group-list small { color: #756f83; }
 .group-add-form { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .75rem; align-items: end; }
 .group-members-title { color: var(--kp11-purple); }

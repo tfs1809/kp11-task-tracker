@@ -25,7 +25,8 @@ first_email = f"system-one-{suffix}@kp11.ru"
 second_email = f"system-two-{suffix}@yandex.ru"
 role_name = f"Smoke Audience Role {suffix}"
 group_name = f"Smoke Group {suffix}"
-ids = {"admin": None, "first": None, "second": None, "role": None, "group": None, "admin_role": None}
+second_group_name = f"Smoke Group Two {suffix}"
+ids = {"admin": None, "first": None, "second": None, "role": None, "group": None, "group2": None, "admin_role": None}
 items = []
 
 
@@ -150,6 +151,15 @@ try:
         ids["group"] = conn.execute("SELECT id FROM access_group WHERE name=%s", (group_name,)).fetchone()["id"]
     with get(opener, "/accounts/system/") as response:
         token = csrf(response.read().decode())
+    with post(opener, "/accounts/system/groups/create/", {"csrf_token": token, "name": second_group_name}):
+        pass
+    with db() as conn:
+        ids["group2"] = conn.execute("SELECT id FROM access_group WHERE name=%s", (second_group_name,)).fetchone()["id"]
+    with get(opener, f"/accounts/system/?tab=users&selected_group={ids['group']}") as response:
+        body = response.read().decode()
+        assert re.findall(r'id="group-([0-9a-f-]+)"', body) == [str(ids["group"])]
+    with get(opener, "/accounts/system/") as response:
+        token = csrf(response.read().decode())
     expect_status(opener, "/accounts/system/groups/create/", {"csrf_token": token, "name": group_name.upper()}, 409)
     renamed_group = f"{group_name} renamed"
     with get(opener, "/accounts/system/") as response:
@@ -248,6 +258,9 @@ finally:
             if ids["group"]:
                 conn.execute("DELETE FROM access_groupmember WHERE group_id=%s", (ids["group"],))
                 conn.execute("DELETE FROM access_group WHERE id=%s", (ids["group"],))
+            if ids["group2"]:
+                conn.execute("DELETE FROM access_groupmember WHERE group_id=%s", (ids["group2"],))
+                conn.execute("DELETE FROM access_group WHERE id=%s", (ids["group2"],))
             if ids["role"]:
                 conn.execute("DELETE FROM access_userrole WHERE role_id=%s", (ids["role"],))
                 conn.execute("DELETE FROM access_rolepermission WHERE role_id=%s", (ids["role"],))
