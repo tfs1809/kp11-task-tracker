@@ -86,27 +86,35 @@ def _anonymous_csrf_valid(request, supplied):
 
 
 def _can_read_item(conn, item_id, user_id):
+    if one(conn, "SELECT 1 FROM workitems_workitem WHERE id=%s AND archived_at IS NULL", (item_id,)) is None:
+        return False
+    if has_permission(conn, user_id, "workitems.view_all"):
+        return True
     return one(conn, """
         SELECT 1 FROM workitems_workitem w
-        WHERE w.id=%s AND w.archived_at IS NULL
+        WHERE w.id=%s
           AND NOT EXISTS (SELECT 1 FROM workitems_userarchive ua WHERE ua.work_item_id=w.id AND ua.user_id=%s)
           AND (
             w.author_id=%s
             OR EXISTS (SELECT 1 FROM workitems_assignment a WHERE a.work_item_id=w.id AND a.user_id=%s AND a.state='active')
         )
-    """, (item_id, user_id, user_id, user_id)) is not None or has_permission(conn, user_id, "workitems.view_all")
+    """, (item_id, user_id, user_id, user_id)) is not None
 
 
 def _can_send_item(conn, item_id, user_id):
+    if one(conn, "SELECT 1 FROM workitems_workitem WHERE id=%s AND archived_at IS NULL", (item_id,)) is None:
+        return False
+    if has_permission(conn, user_id, "discussions.send_accessible"):
+        return True
     return one(conn, """
         SELECT 1 FROM workitems_workitem w
-        WHERE w.id=%s AND w.archived_at IS NULL
+        WHERE w.id=%s
           AND NOT EXISTS (SELECT 1 FROM workitems_userarchive ua WHERE ua.work_item_id=w.id AND ua.user_id=%s)
           AND (
             w.author_id=%s
             OR EXISTS (SELECT 1 FROM workitems_assignment a WHERE a.work_item_id=w.id AND a.user_id=%s AND a.state='active')
         )
-    """, (item_id, user_id, user_id, user_id)) is not None or has_permission(conn, user_id, "discussions.send_accessible")
+    """, (item_id, user_id, user_id, user_id)) is not None
 
 
 def _can_edit_item(conn, item, user_id):

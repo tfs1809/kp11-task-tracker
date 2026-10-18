@@ -122,6 +122,13 @@ try:
         assert conn.execute("SELECT 1 FROM workitems_assignment WHERE work_item_id=%s AND state='active'", (delete_event_id,)).fetchone() is None
         assert conn.execute("SELECT 1 FROM discussions_eventmessage WHERE work_item_id=%s", (delete_event_id,)).fetchone() is not None
         assert conn.execute("SELECT 1 FROM audit_auditentry WHERE object_id=%s", (delete_event_id,)).fetchone() is not None
+    for path in (f"/workitems/{delete_event_id}/", f"/events/{delete_event_id}/chat/"):
+        try:
+            opener.open(urllib.request.Request(BASE + path, headers={"User-Agent": "fastapi-admin-smoke"}), timeout=5)
+        except HTTPError as error:
+            assert error.code == 404
+        else:
+            raise AssertionError(f"globally deleted event remained visible at {path}")
     with opener.open(urllib.request.Request(BASE + "/accounts/invite/", data=urllib.parse.urlencode({"csrf_token": csrf, "email": employee_email, "full_name": "FastAPI invited smoke"}).encode(), headers={"User-Agent": "fastapi-admin-smoke"}), timeout=5) as response:
         invite_body = response.read().decode()
         assert "Приглаш" in invite_body, invite_body[-500:]
