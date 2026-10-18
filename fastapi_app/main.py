@@ -88,21 +88,25 @@ def _anonymous_csrf_valid(request, supplied):
 def _can_read_item(conn, item_id, user_id):
     return one(conn, """
         SELECT 1 FROM workitems_workitem w
-        WHERE w.id=%s AND (
+        WHERE w.id=%s AND w.archived_at IS NULL
+          AND NOT EXISTS (SELECT 1 FROM workitems_userarchive ua WHERE ua.work_item_id=w.id AND ua.user_id=%s)
+          AND (
             w.author_id=%s
             OR EXISTS (SELECT 1 FROM workitems_assignment a WHERE a.work_item_id=w.id AND a.user_id=%s AND a.state='active')
         )
-    """, (item_id, user_id, user_id)) is not None or has_permission(conn, user_id, "workitems.view_all")
+    """, (item_id, user_id, user_id, user_id)) is not None or has_permission(conn, user_id, "workitems.view_all")
 
 
 def _can_send_item(conn, item_id, user_id):
     return one(conn, """
         SELECT 1 FROM workitems_workitem w
-        WHERE w.id=%s AND (
+        WHERE w.id=%s AND w.archived_at IS NULL
+          AND NOT EXISTS (SELECT 1 FROM workitems_userarchive ua WHERE ua.work_item_id=w.id AND ua.user_id=%s)
+          AND (
             w.author_id=%s
             OR EXISTS (SELECT 1 FROM workitems_assignment a WHERE a.work_item_id=w.id AND a.user_id=%s AND a.state='active')
         )
-    """, (item_id, user_id, user_id)) is not None or has_permission(conn, user_id, "discussions.send_accessible")
+    """, (item_id, user_id, user_id, user_id)) is not None or has_permission(conn, user_id, "discussions.send_accessible")
 
 
 def _can_edit_item(conn, item, user_id):
@@ -111,6 +115,11 @@ def _can_edit_item(conn, item, user_id):
 
 def _redirect_login(request):
     return RedirectResponse(f"/accounts/login/?next={request.url.path}", status_code=303)
+
+
+def _safe_next(value, fallback="/"):
+    value = str(value or "")
+    return value if value.startswith("/") and not value.startswith("//") else fallback
 
 
 MOSCOW = ZoneInfo("Europe/Moscow")
@@ -288,13 +297,35 @@ def _delete_user_cascade(conn, user_id):
     conn.execute("DELETE FROM accounts_user WHERE id=%s", (user_id,))
 
 
+def _archive_workitem_for_all(conn, item_id, actor_id):
+    """Hide a task/event for everyone while preserving immutable chat history."""
+    now = datetime.now(timezone.utc)
+    conn.execute(
+        """UPDATE workitems_assignment
+           SET state='revoked', revoked_at=%s, revoked_by_id=%s,
+               revoked_reason='Удалено владельцем', version=version+1
+           WHERE work_item_id=%s AND state='active'""",
+        (now, actor_id, item_id),
+    )
+    conn.execute(
+        """UPDATE workitems_workitem
+           SET archived_at=%s, archived_by_id=%s,
+               chat_closed_at=CASE WHEN kind='event' THEN COALESCE(chat_closed_at,%s) ELSE chat_closed_at END,
+               chat_closed_by_id=CASE WHEN kind='event' THEN COALESCE(chat_closed_by_id,%s) ELSE chat_closed_by_id END,
+               version=version+1
+           WHERE id=%s AND archived_at IS NULL""",
+        (now, actor_id, now, actor_id, item_id),
+    )
+
+
 def _assignments(user_id, completed=False, *, search="", kind="all", author="all", sort="asc"):
     with connection() as conn:
         clauses = [
             "a.user_id=%s", "a.state='active'", "w.archived_at IS NULL",
+            "NOT EXISTS (SELECT 1 FROM workitems_userarchive ua WHERE ua.work_item_id=w.id AND ua.user_id=%s)",
             "((%s AND (a.completed_at IS NOT NULL OR (w.kind='event' AND w.event_at IS NOT NULL AND w.event_at <= now() AND (a.event_returned_at IS NULL OR w.event_at + interval '1 day' <= now())))) OR (NOT %s AND a.completed_at IS NULL AND NOT (w.kind='event' AND w.event_at IS NOT NULL AND w.event_at <= now() AND (a.event_returned_at IS NULL OR w.event_at + interval '1 day' <= now()))))",
         ]
-        params = [user_id, completed, completed]
+        params = [user_id, user_id, completed, completed]
         if search:
             clauses.append("w.title ILIKE %s")
             params.append(f"%{search}%")
@@ -941,7 +972,23 @@ async def detail(request: Request, item_id: UUID):
         item = one(conn, "SELECT w.*,u.full_name author_name FROM workitems_workitem w JOIN accounts_user u ON u.id=w.author_id WHERE w.id=%s", (item_id,))
         if item and not _can_read_item(conn, item_id, user["id"]):
             item = None
-        subtasks = many(conn, "SELECT id,text FROM workitems_subtask WHERE work_item_id=%s AND deleted_at IS NULL ORDER BY position,id", (item_id,)) if item else []
+        viewer_assignment = None
+        subtasks = []
+        if item:
+            viewer_assignment = one(conn, """
+                SELECT id,completed_at,event_returned_at
+                FROM workitems_assignment
+                WHERE work_item_id=%s AND user_id=%s AND state='active'
+            """, (item_id, user["id"]))
+            subtasks = many(conn, """
+                SELECT s.id,s.text,
+                       CASE WHEN p.checked_at IS NOT NULL THEN true ELSE false END AS checked
+                FROM workitems_subtask s
+                LEFT JOIN workitems_subtaskprogress p
+                  ON p.subtask_id=s.id AND p.assignment_id=%s
+                WHERE s.work_item_id=%s AND s.deleted_at IS NULL
+                ORDER BY s.position,s.id
+            """, (viewer_assignment["id"] if viewer_assignment else None, item_id))
         can_edit = bool(item and _can_edit_item(conn, item, user["id"]))
         assignees = []
         if item and (item["author_id"] == user["id"] or has_permission(conn, user["id"], "workitems.view_all")):
@@ -957,14 +1004,32 @@ async def detail(request: Request, item_id: UUID):
     if not item:
         return PlainTextResponse("Not found\n", status_code=404)
     item["kind_label"] = "Событие" if item["kind"] == "event" else "Задача"
-    item["overdue"] = bool(item["due_at"] and item["due_at"] < datetime.now(timezone.utc))
-    item["due_at"] = _date(item["due_at"], True)
-    item["event_at"] = _date(item["event_at"])
+    due_value = item["due_at"]
+    event_value = item["event_at"]
+    item["overdue"] = bool(due_value and due_value < datetime.now(timezone.utc))
+    item["due_date"] = _date(due_value).split(" ")[0] if due_value else ""
+    item["due_time"] = _date(due_value).split(" ", 1)[1] if due_value else ""
+    item["event_date"] = _date(event_value).split(" ")[0] if event_value else ""
+    item["event_time"] = _date(event_value).split(" ", 1)[1] if event_value else ""
+    item["status_label"] = "СРОК ВЫШЕЛ" if item["overdue"] else "АКТИВНА"
+    event_completed = bool(
+        viewer_assignment and item["kind"] == "event" and event_value and event_value <= datetime.now(timezone.utc)
+        and (viewer_assignment["event_returned_at"] is not None or event_value + timedelta(days=1) <= datetime.now(timezone.utc))
+    )
+    if viewer_assignment and (viewer_assignment["completed_at"] or event_completed):
+        item["status_label"] = "ВЫПОЛНЕНА"
+    all_checked = not subtasks or all(row["checked"] for row in subtasks)
+    can_complete = bool(viewer_assignment and item["kind"] == "task" and (all_checked or viewer_assignment["completed_at"]))
+    can_hide = bool(viewer_assignment and item["author_id"] != user["id"])
     for assignee in assignees:
         total = assignee["total_subtasks"]
         assignee["progress"] = "Нет исполнителей" if assignee["state"] != "active" else ("100%" if assignee["completed_at"] else (f"{round(assignee['checked_subtasks'] / total * 100)}%" if total else "0%"))
         assignee["status"] = "Отозвано" if assignee["state"] != "active" else ("Выполнено" if assignee["completed_at"] else "В работе")
-    return _page("detail.html", request, item=item, subtasks=subtasks, assignees=assignees, can_edit=can_edit)
+    return _page(
+        "detail.html", request, item=item, subtasks=subtasks, assignees=assignees,
+        viewer_assignment=viewer_assignment, all_checked=all_checked,
+        can_complete=can_complete, can_hide=can_hide, can_edit=can_edit,
+    )
 
 
 @app.get("/events/{item_id}/chat/", response_class=HTMLResponse)
@@ -999,12 +1064,17 @@ async def send_message(request: Request, item_id: UUID):
     with transaction() as conn:
         if not _can_send_item(conn, item_id, user["id"]):
             return PlainTextResponse("Not found\n", status_code=404)
-        event = one(conn, "SELECT kind,event_at FROM workitems_workitem WHERE id=%s", (item_id,))
-        if not event or event["kind"] != "event" or (event["event_at"] and event["event_at"] + timedelta(days=1) < datetime.now(timezone.utc)):
+        event = one(conn, "SELECT kind,event_at,archived_at FROM workitems_workitem WHERE id=%s", (item_id,))
+        if not event or event["kind"] != "event" or event["archived_at"] is not None or (event["event_at"] and event["event_at"] + timedelta(days=1) < datetime.now(timezone.utc)):
             return PlainTextResponse("Чат закрыт\n", status_code=403)
         import uuid
-        audit = one(conn, "INSERT INTO audit_auditentry(actor_id,actor_label,action,object_type,object_id,occurred_at,request_id,changes,reason) VALUES (%s,%s,'message.send','event_message',%s,now(),%s,'{}','') RETURNING id", (user["id"], user["full_name"], str(item_id), uuid.uuid4()))
-        conn.execute("INSERT INTO discussions_eventmessage(work_item_id,author_id,text,created_at,hidden_reason,last_change_id) VALUES (%s,%s,%s,now(),'',%s)", (item_id, user["id"], text, audit["id"]))
+        message_id = one(conn, "SELECT nextval('discussions_eventmessage_id_seq') AS id")["id"]
+        audit = one(conn, """
+            INSERT INTO audit_auditentry(actor_id,actor_label,action,object_type,object_id,occurred_at,request_id,changes,reason)
+            VALUES (%s,%s,'discussions.sent','work_item',%s,now(),%s,jsonb_build_object('message_id',%s::text),'')
+            RETURNING id
+        """, (user["id"], user["full_name"], str(item_id), uuid.uuid4(), str(message_id)))
+        conn.execute("INSERT INTO discussions_eventmessage(id,work_item_id,author_id,text,created_at,hidden_reason,last_change_id) VALUES (%s,%s,%s,%s,now(),'',%s)", (message_id, item_id, user["id"], text, audit["id"]))
     return RedirectResponse(f"/events/{item_id}/chat/", status_code=303)
 
 
@@ -1023,8 +1093,8 @@ async def issued(request: Request):
     sort = request.query_params.get("sort", "asc")
     if sort not in {"asc", "desc"}:
         sort = "asc"
-    conditions = ["w.author_id=%s", "w.archived_at IS NULL"]
-    params = [user["id"]]
+    conditions = ["w.author_id=%s", "w.archived_at IS NULL", "NOT EXISTS (SELECT 1 FROM workitems_userarchive ua WHERE ua.work_item_id=w.id AND ua.user_id=%s)"]
+    params = [user["id"], user["id"]]
     if search:
         conditions.append("w.title ILIKE %s")
         params.append(f"%{search}%")
@@ -1147,7 +1217,7 @@ async def edit_page(request: Request, item_id: UUID):
     if not user:
         return _redirect_login(request)
     with connection() as conn:
-        item = one(conn, "SELECT * FROM workitems_workitem WHERE id=%s", (item_id,))
+        item = one(conn, "SELECT * FROM workitems_workitem WHERE id=%s AND archived_at IS NULL AND NOT EXISTS (SELECT 1 FROM workitems_userarchive ua WHERE ua.work_item_id=workitems_workitem.id AND ua.user_id=%s)", (item_id, user["id"]))
         if not item:
             return PlainTextResponse("Not found\n", status_code=404)
         if not _can_edit_item(conn, item, user["id"]):
@@ -1155,7 +1225,8 @@ async def edit_page(request: Request, item_id: UUID):
         subtasks = many(conn, "SELECT id,text FROM workitems_subtask WHERE work_item_id=%s AND deleted_at IS NULL ORDER BY position,id", (item_id,))
         active_assignees = many(conn, "SELECT user_id FROM workitems_assignment WHERE work_item_id=%s AND state='active'", (item_id,))
         assignees = _employees(conn)
-    return _page("issue.html", request, values=_edit_values(item, subtasks, [row["user_id"] for row in active_assignees]), assignees=assignees, current_user_id=str(user["id"]), edit_mode=True, item_id=item_id)
+    can_delete_self = item["author_id"] == user["id"]
+    return _page("issue.html", request, values=_edit_values(item, subtasks, [row["user_id"] for row in active_assignees]), assignees=assignees, current_user_id=str(user["id"]), edit_mode=True, item_id=item_id, can_delete_self=can_delete_self)
 
 
 @app.post("/workitems/{item_id}/edit/")
@@ -1177,11 +1248,11 @@ async def edit(request: Request, item_id: UUID):
         posted_subtask_ids = [value for value in form.getlist("subtask_ids")]
     except (ValueError, TypeError):
         with connection() as conn:
-            item = one(conn, "SELECT * FROM workitems_workitem WHERE id=%s", (item_id,))
+            item = one(conn, "SELECT * FROM workitems_workitem WHERE id=%s AND archived_at IS NULL AND NOT EXISTS (SELECT 1 FROM workitems_userarchive ua WHERE ua.work_item_id=workitems_workitem.id AND ua.user_id=%s)", (item_id, user["id"]))
             assignees = _employees(conn)
         return _page("issue.html", request, values=values, assignees=assignees, current_user_id=str(user["id"]), edit_mode=True, item_id=item_id, error="Проверьте исполнителей и даты.")
     with transaction() as conn:
-        item = one(conn, "SELECT * FROM workitems_workitem WHERE id=%s FOR UPDATE", (item_id,))
+        item = one(conn, "SELECT * FROM workitems_workitem WHERE id=%s AND archived_at IS NULL AND NOT EXISTS (SELECT 1 FROM workitems_userarchive ua WHERE ua.work_item_id=workitems_workitem.id AND ua.user_id=%s) FOR UPDATE", (item_id, user["id"]))
         if not item:
             return PlainTextResponse("Not found\n", status_code=404)
         if not _can_edit_item(conn, item, user["id"]):
@@ -1235,6 +1306,37 @@ async def edit(request: Request, item_id: UUID):
     return RedirectResponse(f"/workitems/{item_id}/", status_code=303)
 
 
+@app.post("/workitems/{item_id}/delete/")
+async def delete_workitem(request: Request, item_id: UUID):
+    user = _require_user(request)
+    if not user:
+        return _redirect_login(request)
+    form = await request.form()
+    raw = request.cookies.get(SESSION_COOKIE)
+    if not csrf_valid(raw, str(form.get("csrf_token", ""))):
+        return PlainTextResponse("Forbidden\n", status_code=403)
+    delete_scope = str(form.get("delete_scope", "all"))
+    if delete_scope not in {"all", "self"}:
+        return PlainTextResponse("Некорректный вариант удаления\n", status_code=400)
+    with transaction() as conn:
+        item = one(conn, "SELECT id,author_id FROM workitems_workitem WHERE id=%s AND archived_at IS NULL AND NOT EXISTS (SELECT 1 FROM workitems_userarchive ua WHERE ua.work_item_id=workitems_workitem.id AND ua.user_id=%s) FOR UPDATE", (item_id, user["id"]))
+        if not item:
+            return PlainTextResponse("Not found\n", status_code=404)
+        if delete_scope == "self":
+            assignment = one(conn, "SELECT id FROM workitems_assignment WHERE work_item_id=%s AND user_id=%s AND state='active' FOR UPDATE", (item_id, user["id"]))
+            if item["author_id"] == user["id"] and not _can_edit_item(conn, item, user["id"]):
+                return PlainTextResponse("Forbidden\n", status_code=403)
+            if item["author_id"] != user["id"] and not assignment:
+                return PlainTextResponse("Скрыть можно только свою назначенную задачу\n", status_code=403)
+            # Keep assignment and subtask progress intact. The archive is per-user.
+            conn.execute("INSERT INTO workitems_userarchive(work_item_id,user_id,archived_at) VALUES (%s,%s,now()) ON CONFLICT (work_item_id,user_id) DO NOTHING", (item_id, user["id"]))
+        else:
+            if not _can_edit_item(conn, item, user["id"]):
+                return PlainTextResponse("Forbidden\n", status_code=403)
+            _archive_workitem_for_all(conn, item_id, user["id"])
+    return RedirectResponse("/", status_code=303)
+
+
 @app.post("/assignments/{assignment_id}/completion/")
 async def completion(request: Request, assignment_id: UUID):
     user = _require_user(request)
@@ -1257,7 +1359,7 @@ async def completion(request: Request, assignment_id: UUID):
         if not completed and assignment["kind"] == "event" and assignment["event_at"] and assignment["event_at"] + timedelta(days=1) < datetime.now(timezone.utc):
             return PlainTextResponse("Событие уже закрыто\n", status_code=409)
         conn.execute("UPDATE workitems_assignment AS a SET completed_at=CASE WHEN %s THEN now() ELSE NULL END, completion_epoch=CASE WHEN %s THEN 1 ELSE NULL END, event_returned_at=CASE WHEN %s THEN NULL WHEN w.kind='event' THEN now() ELSE NULL END, version=a.version+1 FROM workitems_workitem w WHERE a.id=%s AND w.id=a.work_item_id", (completed, completed, completed, assignment_id))
-    return RedirectResponse("/", status_code=303)
+    return RedirectResponse(_safe_next(form.get("next")), status_code=303)
 
 
 @app.post("/assignments/{assignment_id}/subtasks/{subtask_id}/")
@@ -1281,7 +1383,7 @@ async def mark(request: Request, assignment_id: UUID, subtask_id: UUID):
                ON CONFLICT (assignment_id,subtask_id) DO UPDATE SET checked_at=EXCLUDED.checked_at,checked_revision=EXCLUDED.checked_revision,version=workitems_subtaskprogress.version+1""",
             (assignment_id, subtask_id, assignment["work_item_id"], checked, checked, subtask["content_revision"]),
         )
-    return RedirectResponse("/", status_code=303)
+    return RedirectResponse(_safe_next(form.get("next")), status_code=303)
 
 
 # Starlette otherwise lets the UUID converter reject `/workitems/new/` and

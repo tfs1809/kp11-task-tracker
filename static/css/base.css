@@ -148,6 +148,47 @@ main { width: min(100%, 1920px); max-width: none; margin: 0 auto 3rem; padding: 
 .assignment-row small { color: #756f83; }
 .assignment-status { color: #756f83; }
 .assignment-progress-value { min-width: 3.5rem; color: var(--kp11-purple); font-weight: 700; text-align: right; }
+.detail-shell { width: min(100%, 832px); margin: 2.6rem auto 0; }
+.detail-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
+.detail-status { padding: .55rem 1rem; border-radius: 12px; background: var(--kp11-lavender); color: var(--kp11-purple); font-family: 'Comfortaa', Arial, sans-serif; font-size: 1.05rem; }
+.detail-status--overdue { background: var(--kp11-overdue); color: #a51d1d; }
+.detail-view-card { padding: .75rem; border-radius: 14px; background: var(--kp11-lavender); }
+.detail-view-card--overdue { background: var(--kp11-overdue); }
+.detail-view-inner { padding: 1rem; border-radius: 12px; background: #fff; }
+.detail-field { min-width: 0; margin-bottom: 1rem; }
+.detail-field h1, .detail-field h2, .detail-section-heading h2 { margin: 0 0 .45rem; color: var(--kp11-purple); font-family: 'Comfortaa', Arial, sans-serif; font-size: 1.3rem; font-weight: 400; }
+.detail-value { min-height: 48px; padding: .7rem .85rem; border: 2px solid var(--kp11-lavender); border-radius: 11px; background: #fff; font-size: 1rem; }
+.detail-view-card--overdue .detail-value { border-color: var(--kp11-overdue); }
+.detail-value--description { min-height: 104px; }
+.detail-date-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, .7fr) minmax(0, 1fr); gap: 1rem; }
+.detail-date-grid--task { grid-template-columns: minmax(0, 1fr) minmax(0, .7fr); }
+.detail-subtasks-section { margin-top: .35rem; border-top: 2px solid var(--kp11-lavender); }
+.detail-section-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; padding-top: .75rem; }
+.detail-section-heading span { color: var(--kp11-purple); }
+.detail-subtasks { display: grid; gap: .55rem; }
+.detail-subtask-row { display: flex; align-items: center; gap: .7rem; min-width: 0; margin: 0; }
+.detail-check { flex: 0 0 auto; min-width: 32px; min-height: 32px; padding: 0; border: 0; background: transparent; }
+.detail-check-box { display: grid; place-items: center; width: 32px; height: 32px; border: 2px solid var(--kp11-purple); border-radius: 10px; background: #fff; color: #fff; font-weight: 700; }
+.detail-check-box.is-checked { background: var(--kp11-purple); }
+.detail-subtask-text { flex: 1; min-width: 0; padding: .65rem .85rem; border: 2px solid var(--kp11-lavender); border-radius: 11px; }
+.detail-view-card--overdue .detail-subtask-text { border-color: var(--kp11-overdue); }
+.detail-actions { display: flex; flex-wrap: wrap; gap: .65rem; align-items: center; margin-top: 1.2rem; padding-top: 1.2rem; border-top: 2px solid var(--kp11-lavender); }
+.detail-actions form { margin: 0; }
+.detail-actions .button { min-height: 48px; border-radius: 11px; font-family: 'Comfortaa', Arial, sans-serif; font-size: 1.05rem; }
+.detail-actions .detail-delete { margin-left: auto; }
+.detail-actions button:disabled { opacity: .5; }
+.detail-view-inner > .task-author { margin-top: 1rem; }
+@media (max-width: 600px) { .detail-toolbar { align-items: flex-start; flex-direction: column; } .detail-date-grid, .detail-date-grid--task { grid-template-columns: 1fr; gap: .2rem; } .detail-actions .detail-delete { margin-left: 0; } }
+.issue-actions form { margin: 0; }
+.issue-actions .delete-workitem { color: #b51e2a; border-color: #b51e2a; }
+.delete-workitem-dialog { width: min(100% - 2rem, 34rem); border: 0; border-radius: 14px; padding: .75rem; background: var(--kp11-lavender); color: var(--kp11-ink); }
+.delete-workitem-dialog::backdrop { background: rgba(17, 8, 70, .38); }
+.delete-dialog-form { padding: 1.25rem; border-radius: 12px; background: #fff; }
+.delete-dialog-form h2 { margin: 0 0 .45rem; color: var(--kp11-purple); font-family: 'Comfortaa', Arial, sans-serif; font-size: 1.25rem; font-weight: 500; }
+.delete-dialog-form p { margin: 0 0 1rem; color: #756f83; }
+.delete-dialog-actions { display: flex; flex-wrap: wrap; gap: .65rem; }
+.delete-dialog-actions .button { min-height: 46px; border-radius: 11px; font-family: 'Comfortaa', Arial, sans-serif; }
+.delete-dialog-actions .button:first-child { background: #b51e2a; border-color: #b51e2a; }
 footer { color: var(--kp11-purple); }
 .admin-page { width: min(100%, 1100px); margin: 2.5rem auto; background: var(--kp11-lavender); border: 0; border-radius: 14px; }
 .admin-page table { width: 100%; background: #fff; border-radius: 12px; border-collapse: collapse; overflow: hidden; }

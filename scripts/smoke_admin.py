@@ -5,6 +5,7 @@ import re
 import secrets
 import urllib.parse
 import urllib.request
+from urllib.error import HTTPError
 from pathlib import Path
 import sys
 from uuid import uuid4
@@ -68,6 +69,59 @@ try:
         assert response.geturl().endswith("/")
     with opener.open(urllib.request.Request(BASE + "/?tab=completed", headers={"User-Agent": "fastapi-admin-smoke"}), timeout=5) as response:
         assert title in response.read().decode()
+
+    with opener.open(urllib.request.Request(BASE + "/workitems/new/", headers={"User-Agent": "fastapi-admin-smoke"}), timeout=5) as response:
+        csrf = token(response.read().decode())
+    delete_task_title = "FastAPI delete task smoke " + suffix
+    create_delete_task = urllib.parse.urlencode([("csrf_token", csrf), ("title", delete_task_title), ("description", "delete workflow"), ("kind", "task"), ("due_at", "2030-01-01T12:00"), ("event_at", ""), ("subtasks", "one"), ("subtasks", "two")])
+    with opener.open(urllib.request.Request(BASE + "/workitems/new/", data=create_delete_task.encode(), headers={"User-Agent": "fastapi-admin-smoke"}), timeout=5) as response:
+        delete_task_id = response.geturl().rstrip("/").split("/")[-1]
+    with opener.open(urllib.request.Request(BASE + f"/workitems/{delete_task_id}/", headers={"User-Agent": "fastapi-admin-smoke"}), timeout=5) as response:
+        detail_body = response.read().decode()
+        assert "Отметить выполненной" in detail_body and "disabled" in detail_body
+        assert "ДАТА СОБЫТИЯ" not in detail_body
+    with opener.open(urllib.request.Request(BASE + f"/workitems/{delete_task_id}/edit/", headers={"User-Agent": "fastapi-admin-smoke"}), timeout=5) as response:
+        edit_body = response.read().decode()
+        assert "УДАЛИТЬ" in edit_body and "delete-workitem-dialog" in edit_body and "Удалить только у себя" in edit_body
+        csrf = token(edit_body)
+    with opener.open(urllib.request.Request(BASE + f"/workitems/{delete_task_id}/delete/", data=urllib.parse.urlencode({"csrf_token": csrf, "delete_scope": "self"}).encode(), headers={"User-Agent": "fastapi-admin-smoke"}), timeout=5) as response:
+        assert response.geturl().endswith("/")
+    with db() as conn:
+        assert conn.execute("SELECT 1 FROM workitems_workitem WHERE id=%s", (delete_task_id,)).fetchone() is not None
+        assert conn.execute("SELECT 1 FROM workitems_assignment WHERE work_item_id=%s AND user_id=%s AND state='active'", (delete_task_id, uid)).fetchone() is not None
+        assert conn.execute("SELECT 1 FROM workitems_userarchive WHERE work_item_id=%s AND user_id=%s", (delete_task_id, uid)).fetchone() is not None
+    try:
+        opener.open(urllib.request.Request(BASE + f"/workitems/{delete_task_id}/edit/", headers={"User-Agent": "fastapi-admin-smoke"}), timeout=5)
+    except HTTPError as error:
+        assert error.code == 404
+    else:
+        raise AssertionError("self-deleted task remained editable for its owner")
+    with db() as conn:
+        with conn.transaction():
+            conn.execute("DELETE FROM workitems_userarchive WHERE work_item_id=%s", (delete_task_id,))
+            conn.execute("DELETE FROM workitems_subtaskprogress WHERE work_item_id=%s", (delete_task_id,))
+            conn.execute("DELETE FROM workitems_subtask WHERE work_item_id=%s", (delete_task_id,))
+            conn.execute("DELETE FROM workitems_assignment WHERE work_item_id=%s", (delete_task_id,))
+            conn.execute("DELETE FROM workitems_workitem WHERE id=%s", (delete_task_id,))
+
+    with opener.open(urllib.request.Request(BASE + "/workitems/new/", headers={"User-Agent": "fastapi-admin-smoke"}), timeout=5) as response:
+        csrf = token(response.read().decode())
+    delete_event_title = "FastAPI delete event smoke " + suffix
+    with opener.open(urllib.request.Request(BASE + "/workitems/new/", data=urllib.parse.urlencode({"csrf_token": csrf, "title": delete_event_title, "description": "delete event workflow", "kind": "event", "due_at": "2030-01-01T12:00", "event_at": "2030-01-02T12:00"}).encode(), headers={"User-Agent": "fastapi-admin-smoke"}), timeout=5) as response:
+        delete_event_id = response.geturl().rstrip("/").split("/")[-1]
+    with opener.open(urllib.request.Request(BASE + f"/events/{delete_event_id}/chat/", headers={"User-Agent": "fastapi-admin-smoke"}), timeout=5) as response:
+        csrf = token(response.read().decode())
+    with opener.open(urllib.request.Request(BASE + f"/events/{delete_event_id}/chat/send/", data=urllib.parse.urlencode({"csrf_token": csrf, "text": "message before delete"}).encode(), headers={"User-Agent": "fastapi-admin-smoke"}), timeout=5) as response:
+        assert response.geturl().endswith(f"/events/{delete_event_id}/chat/")
+    with opener.open(urllib.request.Request(BASE + f"/workitems/{delete_event_id}/edit/", headers={"User-Agent": "fastapi-admin-smoke"}), timeout=5) as response:
+        csrf = token(response.read().decode())
+    with opener.open(urllib.request.Request(BASE + f"/workitems/{delete_event_id}/delete/", data=urllib.parse.urlencode({"csrf_token": csrf}).encode(), headers={"User-Agent": "fastapi-admin-smoke"}), timeout=5) as response:
+        assert response.geturl().endswith("/")
+    with db() as conn:
+        assert conn.execute("SELECT archived_at FROM workitems_workitem WHERE id=%s AND archived_at IS NOT NULL", (delete_event_id,)).fetchone() is not None
+        assert conn.execute("SELECT 1 FROM workitems_assignment WHERE work_item_id=%s AND state='active'", (delete_event_id,)).fetchone() is None
+        assert conn.execute("SELECT 1 FROM discussions_eventmessage WHERE work_item_id=%s", (delete_event_id,)).fetchone() is not None
+        assert conn.execute("SELECT 1 FROM audit_auditentry WHERE object_id=%s", (delete_event_id,)).fetchone() is not None
     with opener.open(urllib.request.Request(BASE + "/accounts/invite/", data=urllib.parse.urlencode({"csrf_token": csrf, "email": employee_email, "full_name": "FastAPI invited smoke"}).encode(), headers={"User-Agent": "fastapi-admin-smoke"}), timeout=5) as response:
         invite_body = response.read().decode()
         assert "Приглаш" in invite_body, invite_body[-500:]
@@ -81,7 +135,7 @@ try:
         assert response.geturl().endswith("/accounts/administration/")
     with db() as conn:
         assert not conn.execute("SELECT is_active FROM accounts_user WHERE id=%s", (employee["id"],)).fetchone()["is_active"]
-    print("Admin/workflow: permission gate, task creation, active/completed tabs, invitation and employee deactivation — OK")
+    print("Admin/workflow: permission gate, task card rendering/progress gate, active/completed tabs, task/event deletion scopes, invitation and employee deactivation — OK")
 finally:
     with db() as conn:
         with conn.transaction():

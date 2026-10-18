@@ -4,6 +4,24 @@
       if (!window.confirm(form.dataset.confirmDelete)) event.preventDefault();
     });
   });
+
+  const deleteDialog = document.querySelector('[data-delete-dialog]');
+  document.querySelectorAll('[data-delete-dialog-open]').forEach(button => {
+    button.addEventListener('click', () => {
+      if (typeof deleteDialog?.showModal === 'function') deleteDialog.showModal();
+      else deleteDialog?.setAttribute('open', '');
+    });
+  });
+  const closeDeleteDialog = () => {
+    if (typeof deleteDialog?.close === 'function') deleteDialog.close();
+    else deleteDialog?.removeAttribute('open');
+  };
+  document.querySelectorAll('[data-delete-dialog-close]').forEach(button => {
+    button.addEventListener('click', closeDeleteDialog);
+  });
+  deleteDialog?.addEventListener('click', event => {
+    if (event.target === deleteDialog) closeDeleteDialog();
+  });
   const systemSearch = document.querySelector('[data-system-search]');
   systemSearch?.addEventListener('input', () => {
     const query = systemSearch.value.trim().toLocaleLowerCase();
