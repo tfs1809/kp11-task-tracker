@@ -56,19 +56,49 @@ try:
         assert "Сотрудники" in body and admin_email in body
         csrf = token(body)
     with opener.open(urllib.request.Request(BASE + "/workitems/new/", headers={"User-Agent": "fastapi-admin-smoke"}), timeout=5) as response:
-        csrf = token(response.read().decode())
+        new_body = response.read().decode()
+        csrf = token(new_body)
+        assert 'class="form-grid issue-dates event-fields" hidden' in new_body
     title = "FastAPI workflow smoke " + suffix
     with opener.open(urllib.request.Request(BASE + "/workitems/new/", data=urllib.parse.urlencode({"csrf_token": csrf, "title": title, "description": "workflow", "kind": "task", "due_at": "2030-01-01T12:00", "event_at": ""}).encode(), headers={"User-Agent": "fastapi-admin-smoke"}), timeout=5) as response:
         assert "/workitems/" in response.geturl()
     with opener.open(urllib.request.Request(BASE + "/", headers={"User-Agent": "fastapi-admin-smoke"}), timeout=5) as response:
         body = response.read().decode()
         assert title in body
+        assert "task-card-hitarea" in body
+        assert re.search(r'<a class="task-card-hitarea" href="/workitems/[^\"]+/"><div class="card-meta">.*?<h2>' + re.escape(title) + r'</h2><p class="task-description">workflow</p></a>', body, re.S)
         assignment_id = re.search(r"/assignments/([0-9a-f-]+)/completion/", body).group(1)
         csrf = token(body)
     with opener.open(urllib.request.Request(BASE + f"/assignments/{assignment_id}/completion/", data=urllib.parse.urlencode({"csrf_token": csrf, "completed": "true"}).encode(), headers={"User-Agent": "fastapi-admin-smoke"}), timeout=5) as response:
         assert response.geturl().endswith("/")
     with opener.open(urllib.request.Request(BASE + "/?tab=completed", headers={"User-Agent": "fastapi-admin-smoke"}), timeout=5) as response:
         assert title in response.read().decode()
+
+    with opener.open(urllib.request.Request(BASE + "/workitems/new/", headers={"User-Agent": "fastapi-admin-smoke"}), timeout=5) as response:
+        switch_csrf = token(response.read().decode())
+    with opener.open(urllib.request.Request(BASE + "/workitems/new/", data=urllib.parse.urlencode({"csrf_token": switch_csrf, "title": "FastAPI type switch smoke " + suffix, "description": "type switch", "kind": "task", "due_at": "2030-01-01T12:00", "event_at": ""}).encode(), headers={"User-Agent": "fastapi-admin-smoke"}), timeout=5) as response:
+        switch_id = response.geturl().rstrip("/").split("/")[-1]
+    with opener.open(urllib.request.Request(BASE + f"/workitems/{switch_id}/edit/", headers={"User-Agent": "fastapi-admin-smoke"}), timeout=5) as response:
+        switch_csrf = token(response.read().decode())
+    switch_event = urllib.parse.urlencode({"csrf_token": switch_csrf, "title": "FastAPI type switch smoke " + suffix, "description": "type switch", "kind": "event", "due_date": "2030-01-01", "due_time": "12:00", "event_date": "2030-01-02", "event_time": "12:00", "assignee_ids": str(uid)})
+    with opener.open(urllib.request.Request(BASE + f"/workitems/{switch_id}/edit/", data=switch_event.encode(), headers={"User-Agent": "fastapi-admin-smoke"}), timeout=5) as response:
+        assert response.geturl().endswith(f"/workitems/{switch_id}/")
+    with db() as conn:
+        switched = conn.execute("SELECT kind,event_at FROM workitems_workitem WHERE id=%s", (switch_id,)).fetchone()
+        assert switched["kind"] == "event" and switched["event_at"] is not None
+    with opener.open(urllib.request.Request(BASE + f"/workitems/{switch_id}/edit/", headers={"User-Agent": "fastapi-admin-smoke"}), timeout=5) as response:
+        switch_body = response.read().decode()
+        assert 'class="form-grid issue-dates event-fields" hidden' not in switch_body and "ДАТА СОБЫТИЯ" in switch_body
+        switch_csrf = token(switch_body)
+    switch_task = urllib.parse.urlencode({"csrf_token": switch_csrf, "title": "FastAPI type switch smoke " + suffix, "description": "type switch", "kind": "task", "due_date": "2030-01-01", "due_time": "12:00", "event_date": "", "event_time": "", "assignee_ids": str(uid)})
+    with opener.open(urllib.request.Request(BASE + f"/workitems/{switch_id}/edit/", data=switch_task.encode(), headers={"User-Agent": "fastapi-admin-smoke"}), timeout=5) as response:
+        assert response.geturl().endswith(f"/workitems/{switch_id}/")
+    with db() as conn:
+        switched = conn.execute("SELECT kind,event_at FROM workitems_workitem WHERE id=%s", (switch_id,)).fetchone()
+        assert switched["kind"] == "task" and switched["event_at"] is None
+        with conn.transaction():
+            conn.execute("DELETE FROM workitems_assignment WHERE work_item_id=%s", (switch_id,))
+            conn.execute("DELETE FROM workitems_workitem WHERE id=%s", (switch_id,))
 
     with opener.open(urllib.request.Request(BASE + "/workitems/new/", headers={"User-Agent": "fastapi-admin-smoke"}), timeout=5) as response:
         csrf = token(response.read().decode())
@@ -109,12 +139,17 @@ try:
     delete_event_title = "FastAPI delete event smoke " + suffix
     with opener.open(urllib.request.Request(BASE + "/workitems/new/", data=urllib.parse.urlencode({"csrf_token": csrf, "title": delete_event_title, "description": "delete event workflow", "kind": "event", "due_at": "2030-01-01T12:00", "event_at": "2030-01-02T12:00"}).encode(), headers={"User-Agent": "fastapi-admin-smoke"}), timeout=5) as response:
         delete_event_id = response.geturl().rstrip("/").split("/")[-1]
+    with opener.open(urllib.request.Request(BASE + "/", headers={"User-Agent": "fastapi-admin-smoke"}), timeout=5) as response:
+        event_body = response.read().decode()
+        assert f'class="button" href="/events/{delete_event_id}/chat/">чат</a>' in event_body
     with opener.open(urllib.request.Request(BASE + f"/events/{delete_event_id}/chat/", headers={"User-Agent": "fastapi-admin-smoke"}), timeout=5) as response:
         csrf = token(response.read().decode())
     with opener.open(urllib.request.Request(BASE + f"/events/{delete_event_id}/chat/send/", data=urllib.parse.urlencode({"csrf_token": csrf, "text": "message before delete"}).encode(), headers={"User-Agent": "fastapi-admin-smoke"}), timeout=5) as response:
         assert response.geturl().endswith(f"/events/{delete_event_id}/chat/")
     with opener.open(urllib.request.Request(BASE + f"/workitems/{delete_event_id}/edit/", headers={"User-Agent": "fastapi-admin-smoke"}), timeout=5) as response:
-        csrf = token(response.read().decode())
+        event_edit_body = response.read().decode()
+        csrf = token(event_edit_body)
+        assert 'class="form-grid issue-dates event-fields" hidden' not in event_edit_body and "ДАТА СОБЫТИЯ" in event_edit_body
     with opener.open(urllib.request.Request(BASE + f"/workitems/{delete_event_id}/delete/", data=urllib.parse.urlencode({"csrf_token": csrf}).encode(), headers={"User-Agent": "fastapi-admin-smoke"}), timeout=5) as response:
         assert response.geturl().endswith("/")
     with db() as conn:

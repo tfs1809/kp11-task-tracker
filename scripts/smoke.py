@@ -25,6 +25,9 @@ with urllib.request.urlopen(web + "/", timeout=5) as response:
     assert response.headers["Cache-Control"] == "no-store"
 with urllib.request.urlopen(web + "/static/css/base.css", timeout=5) as response:
     assert response.status == 200 and b"focus-visible" in response.read()
+with urllib.request.urlopen(web + "/static/js/forms.js", timeout=5) as response:
+    js = response.read()
+    assert response.status == 200 and b"closeDropdownsOutside" in js and b"dropdown.contains(event.target)" in js
 for endpoint in ["/health/live/", "/health/ready/"]:
     try:
         urllib.request.urlopen(web + endpoint, timeout=5)

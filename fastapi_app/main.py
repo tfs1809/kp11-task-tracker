@@ -1164,7 +1164,7 @@ async def issue(request: Request):
             return PlainTextResponse("Forbidden\n", status_code=403)
     try:
         due = _form_datetime(form, "due", "due_at")
-        event = _form_datetime(form, "event", "event_at")
+        event = _form_datetime(form, "event", "event_at") if values["kind"] == "event" else None
         if due is None:
             raise ValueError("Срок обязателен")
     except ValueError:
@@ -1249,7 +1249,7 @@ async def edit(request: Request, item_id: UUID):
     values = _issue_values(form)
     try:
         due = _form_datetime(form, "due", "due_at")
-        event = _form_datetime(form, "event", "event_at")
+        event = _form_datetime(form, "event", "event_at") if values["kind"] == "event" else None
         if due is None or (values["kind"] == "event" and event is None):
             raise ValueError
         selected_ids = list(dict.fromkeys(UUID(value) for value in values["assignee_ids"]))
@@ -1265,8 +1265,6 @@ async def edit(request: Request, item_id: UUID):
             return PlainTextResponse("Not found\n", status_code=404)
         if not _can_edit_item(conn, item, user["id"]):
             return PlainTextResponse("Forbidden\n", status_code=403)
-        if values["kind"] != item["kind"]:
-            return PlainTextResponse("Тип задания нельзя изменить\n", status_code=409)
         valid_users = {row["id"] for row in many(conn, "SELECT id FROM accounts_user WHERE id = ANY(%s) AND is_active AND email_verified_at IS NOT NULL", (selected_ids,))}
         if not valid_users:
             return PlainTextResponse("Выберите хотя бы одного исполнителя\n", status_code=400)
@@ -1276,7 +1274,7 @@ async def edit(request: Request, item_id: UUID):
         current_active_users = {row["user_id"] for row in existing if row["state"] == "active"}
         if current_active_users != valid_users and not has_permission(conn, user["id"], "workitems.edit_all") and not has_permission(conn, user["id"], "workitems.manage_own_assignees"):
             return PlainTextResponse("Недостаточно прав для изменения исполнителей\n", status_code=403)
-        conn.execute("UPDATE workitems_workitem SET title=%s,description=%s,due_at=%s,event_at=%s,version=version+1 WHERE id=%s", (values["title"].strip(), values["description"], due, event, item_id))
+        conn.execute("UPDATE workitems_workitem SET kind=%s,title=%s,description=%s,due_at=%s,event_at=%s,version=version+1 WHERE id=%s", (values["kind"], values["title"].strip(), values["description"], due, event, item_id))
         for selected in valid_users:
             previous = existing_by_user.get(selected)
             if previous and previous["state"] != "active":

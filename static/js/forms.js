@@ -22,6 +22,19 @@
   deleteDialog?.addEventListener('click', event => {
     if (event.target === deleteDialog) closeDeleteDialog();
   });
+
+  const dropdowns = [...document.querySelectorAll('details.assignee-picker')];
+  const closeDropdownsOutside = event => {
+    dropdowns.forEach(dropdown => {
+      if (dropdown.open && !dropdown.contains(event.target)) dropdown.open = false;
+    });
+  };
+  document.addEventListener('click', closeDropdownsOutside);
+  document.addEventListener('keydown', event => {
+    if (event.key !== 'Escape') return;
+    dropdowns.forEach(dropdown => { dropdown.open = false; });
+  });
+
   const systemSearch = document.querySelector('[data-system-search]');
   systemSearch?.addEventListener('input', () => {
     const query = systemSearch.value.trim().toLocaleLowerCase();
